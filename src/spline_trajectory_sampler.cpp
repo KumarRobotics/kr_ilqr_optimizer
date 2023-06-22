@@ -6,6 +6,8 @@
 #include <Eigen/Eigen>
 
 //
+#include <iostream>
+#include <fstream>
 
 #include "ros/ros.h"
 #include <std_msgs/Float64.h>
@@ -18,7 +20,11 @@ class SplineTrajSampler
   SplineTrajSampler(){
     ros::NodeHandle n;
     pub_ = n.advertise<kr_planning_msgs::TrajectoryDiscretized>("spline_traj_samples", 1);
-    sub_ = n.subscribe("/quadrotor/local_plan_server/trajectory", 1, &SplineTrajSampler::callbackWrapper, this);
+    sub_ = n.subscribe("/local_plan_server/trajectory", 1, &SplineTrajSampler::callbackWrapper, this);
+    if (write_summary_to_file_){
+      poly_array_file.open("/home/yifei/planning_summary.csv",std::ios_base::app);
+      poly_array_file << "Planning Iteration, Starting x, Snap Norm Sum, Traj Time \n";
+    }
   
   }
   void callbackWrapper(const kr_planning_msgs::SplineTrajectory::ConstPtr& msg)
@@ -30,6 +36,10 @@ class SplineTrajSampler
     double total_time3 = 0.0;
     double total_time4 = 0.0;
     double total_time5 = 0.0;
+    double whole_traj_time = 0.0;
+    for (const auto& spline : traj.data) {
+      whole_traj_time += spline.t_total;
+    }
     auto pos = sample(traj, N_sample_pts, 0, total_time1);
     auto vel = sample(traj, N_sample_pts, 1, total_time2);
     auto acc = sample(traj, N_sample_pts, 2, total_time3);
@@ -37,6 +47,7 @@ class SplineTrajSampler
     auto snap = sample(traj, N_sample_pts, 4, total_time5);
     kr_planning_msgs::TrajectoryDiscretized traj_discretized; 
     traj_discretized.header = traj.header;
+    double snap_abs_sum = 0.0;
 
     for (int i = 0; i < N_sample_pts; i++) {
 
@@ -51,14 +62,15 @@ class SplineTrajSampler
 
       Eigen::Vector3d yaw_three_der = Eigen::Vector3d(0, 0, 0);
       compute_ref_inputs(pos[i], vel[i], acc[i], jerk[i], snap[i], yaw_three_der, thrust, moment);
+      snap_abs_sum += snap[i].norm();
 
       unpack(pos_t, pos[i]);
       unpack(vel_t, vel[i]);
       unpack(acc_t, acc[i]);
       // unpack(jerk_t, jerk[i]);
       // unpack(snap_t, snap[i]);
-
-
+      
+     
 
       // Assuming the Eigen vector contains 3D points (x, y, z)
 
@@ -70,14 +82,34 @@ class SplineTrajSampler
       traj_discretized.thrust.push_back(thrust);
       traj_discretized.moment.push_back(moment);
 
-      std::cout << thrust << std::endl;
+      // std::cout << thrust << std::endl;
+    }
+    if (write_summary_to_file_){
+      //get start location as key to which ones successed
+      poly_array_file << std::to_string(N_iter_)+ ", " + std::to_string(pos[0](0)) + ", " + std::to_string(snap_abs_sum) + ", " + std::to_string(whole_traj_time) + "\n";
+      //compute the total snap at 100 points, abs and sum
+
+
+        // for (unsigned long mat_idx = 0; mat_idx < hPolys.size();  mat_idx++){
+        //   std::cout<<hPolys[mat_idx];
+        //   poly_array_file << hPolys[mat_idx].format(matformat) << '\n';
+        // }
+        
+        
+        
+
     }
     traj_discretized.t =  linspace(0.0, total_time1, N_sample_pts);
     traj_discretized.N = N_sample_pts;
     this->pub_.publish(traj_discretized);
+    N_iter_++;
   }
 
   protected:
+  bool write_summary_to_file_ = true;
+  uint N_iter_ = 0;
+  std::ofstream poly_array_file;
+  
   ros::Subscriber sub_;
   ros::Publisher pub_;
   double time_limit_ = 6.0;
@@ -197,8 +229,8 @@ class SplineTrajSampler
       std::vector<Eigen::VectorXd> ps(N + 1);
       for (const auto& spline : msg.data) {
         total_time += spline.t_total;
-        if (total_time > time_limit_) break; //for a max of 6 seconds, too long make ilqr sovler fail
       }
+      if (total_time > time_limit_) total_time = time_limit_; //for a max of 6 seconds, too long make ilqr sovler fail
       double dt = total_time / N;
       for (int i = 0; i <= N; i++) ps.at(i) = evaluate(msg, i * dt, deriv_num);
 
