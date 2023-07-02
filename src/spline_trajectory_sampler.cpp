@@ -23,7 +23,7 @@ class SplineTrajSampler
     sub_ = n.subscribe("/local_plan_server/trajectory", 1, &SplineTrajSampler::callbackWrapper, this);
     if (write_summary_to_file_){
       poly_array_file.open("/home/yifei/planning_summary.csv",std::ios_base::app);
-      poly_array_file << "Planning Iteration, Starting x, Snap Norm Sum, Traj Time \n";
+      poly_array_file << "Planning Iteration, Starting x, Jerk Norm Sum, Traj Time, Total_Ref_Fdt, Total_Ref_Mdt \n";
     }
   
   }
@@ -36,18 +36,18 @@ class SplineTrajSampler
     double total_time3 = 0.0;
     double total_time4 = 0.0;
     double total_time5 = 0.0;
-    double whole_traj_time = 0.0;
-    for (const auto& spline : traj.data) {
-      whole_traj_time += spline.t_total;
-    }
     auto pos = sample(traj, N_sample_pts, 0, total_time1);
     auto vel = sample(traj, N_sample_pts, 1, total_time2);
     auto acc = sample(traj, N_sample_pts, 2, total_time3);
     auto jerk = sample(traj, N_sample_pts, 3, total_time4);
     auto snap = sample(traj, N_sample_pts, 4, total_time5);
+    double dt = total_time1/N_sample_pts;
+
     kr_planning_msgs::TrajectoryDiscretized traj_discretized; 
     traj_discretized.header = traj.header;
-    double snap_abs_sum = 0.0;
+    double jerk_abs_sum = 0.0;
+    double total_ref_F = 0.0;
+    double total_ref_M = 0.0;
 
     for (int i = 0; i < N_sample_pts; i++) {
 
@@ -61,8 +61,12 @@ class SplineTrajSampler
 
 
       Eigen::Vector3d yaw_three_der = Eigen::Vector3d(0, 0, 0);
-      compute_ref_inputs(pos[i], vel[i], acc[i], jerk[i], snap[i], yaw_three_der, thrust, moment);
-      snap_abs_sum += snap[i].norm();
+      Eigen::Vector3d M = compute_ref_inputs(pos[i], vel[i], acc[i], jerk[i], snap[i], yaw_three_der, thrust, moment);
+      
+      jerk_abs_sum += acc[i].squaredNorm()*dt;
+      total_ref_F += abs(thrust)*dt;
+      total_ref_M += M.norm()*dt;
+
 
       unpack(pos_t, pos[i]);
       unpack(vel_t, vel[i]);
@@ -86,18 +90,8 @@ class SplineTrajSampler
     }
     if (write_summary_to_file_){
       //get start location as key to which ones successed
-      poly_array_file << std::to_string(N_iter_)+ ", " + std::to_string(pos[0](0)) + ", " + std::to_string(snap_abs_sum) + ", " + std::to_string(whole_traj_time) + "\n";
-      //compute the total snap at 100 points, abs and sum
-
-
-        // for (unsigned long mat_idx = 0; mat_idx < hPolys.size();  mat_idx++){
-        //   std::cout<<hPolys[mat_idx];
-        //   poly_array_file << hPolys[mat_idx].format(matformat) << '\n';
-        // }
-        
-        
-        
-
+      poly_array_file << std::to_string(N_iter_)+ ", " + std::to_string(pos[0](0)) + ", " + std::to_string(jerk_abs_sum) + ", " + std::to_string(total_time1) +"," + std::to_string(total_ref_F)+","+std::to_string(total_ref_M)+"\n";
+      //compute the total snap at 100 points
     }
     traj_discretized.t =  linspace(0.0, total_time1, N_sample_pts);
     traj_discretized.N = N_sample_pts;
@@ -106,20 +100,20 @@ class SplineTrajSampler
   }
 
   protected:
-  bool write_summary_to_file_ = true;
+  bool write_summary_to_file_ = false;
   uint N_iter_ = 0;
   std::ofstream poly_array_file;
   
   ros::Subscriber sub_;
   ros::Publisher pub_;
-  double time_limit_ = 6.0;
+  double time_limit_ = 5.0;
   double g_ = 9.81;
   double mass_ = 0.5;
   Eigen::DiagonalMatrix<double, 3> inertia_ = Eigen::DiagonalMatrix<double, 3> (0.0023, 0.0023, 0.004);
 
   private:
 
-  void compute_ref_inputs(Eigen::Vector3d pos, Eigen::Vector3d vel, Eigen::Vector3d acc, Eigen::Vector3d jerk, Eigen::Vector3d snap, Eigen::Vector3d yaw_dyaw_ddyaw, double& thrust, geometry_msgs::Point& moment){
+  Eigen::Vector3d compute_ref_inputs(Eigen::Vector3d pos, Eigen::Vector3d vel, Eigen::Vector3d acc, Eigen::Vector3d jerk, Eigen::Vector3d snap, Eigen::Vector3d yaw_dyaw_ddyaw, double& thrust, geometry_msgs::Point& moment){
 
     // Desired force vector.
     Eigen::Vector3d t = acc + Eigen::Vector3d(0, 0, g_);
@@ -161,6 +155,7 @@ class SplineTrajSampler
     Eigen::Vector3d TM;
     unpack(moment, u2);
     thrust = u1;
+    return u2;
   }
 
   void unpack(geometry_msgs::Point& p, const Eigen::VectorXd& v) {
@@ -227,9 +222,7 @@ class SplineTrajSampler
     std::vector<Eigen::VectorXd> sample(
         const kr_planning_msgs::SplineTrajectory& msg, int N, int deriv_num, double& total_time) {
       std::vector<Eigen::VectorXd> ps(N + 1);
-      for (const auto& spline : msg.data) {
-        total_time += spline.t_total;
-      }
+      total_time = msg.data[0].t_total;
       if (total_time > time_limit_) total_time = time_limit_; //for a max of 6 seconds, too long make ilqr sovler fail
       double dt = total_time / N;
       for (int i = 0; i <= N; i++) ps.at(i) = evaluate(msg, i * dt, deriv_num);
