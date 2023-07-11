@@ -7,7 +7,7 @@
   <!-- One maintainer tag required, multiple allowed, one person per tag -->
   <!-- Example:  -->
   <!-- <maintainer email="jane.doe@example.com">Jane Doe</maintainer> -->
-  <maintainer email="yifei@todo.todo">yifei</maintainer>
+  <maintainer email="yishao@seas.upenn.edu">yifei</maintainer>
 
 
   <!-- One license tag required, multiple allowed, one license per tag -->
@@ -56,6 +56,7 @@
   <exec_depend>kr_planning_msgs</exec_depend>
   <exec_depend>roscpp</exec_depend>
   <depend>state_machine</depend>
+  <depend>eigen_conversions</depend>
   <!-- <depend>eigen_conversions</depend> -->
 
 

@@ -1,6 +1,7 @@
 #include "ros/ros.h"
 #include <kr_planning_msgs/SplineTrajectory.h>
 #include <kr_planning_msgs/TrajectoryDiscretized.h>
+#include <eigen_conversions/eigen_msg.h>
 // #include <kr_planning_rviz_plugins/spline_trajectory_visual.h>
 #include <boost/bind.hpp>
 #include <Eigen/Eigen>
@@ -20,7 +21,8 @@ class SplineTrajSampler
   SplineTrajSampler(){
     ros::NodeHandle n;
     pub_ = n.advertise<kr_planning_msgs::TrajectoryDiscretized>("spline_traj_samples", 1);
-    sub_ = n.subscribe("/local_plan_server/trajectory", 1, &SplineTrajSampler::callbackWrapper, this);
+    // sub_ = n.subscribe("/local_plan_server/trajectory", 1, &SplineTrajSampler::callbackWrapper, this);
+    sub_ = n.subscribe("/local_plan_server/trajectory_planner/search_trajectory", 1, &SplineTrajSampler::callbackWrapper, this);
     if (write_summary_to_file_){
       poly_array_file.open("/home/yifei/planning_summary.csv",std::ios_base::app);
       poly_array_file << "Planning Iteration, Starting x, Jerk Norm Sum, Traj Time, Total_Ref_Fdt, Total_Ref_Mdt \n";
@@ -48,6 +50,10 @@ class SplineTrajSampler
     double jerk_abs_sum = 0.0;
     double total_ref_F = 0.0;
     double total_ref_M = 0.0;
+    Eigen::Quaterniond initial_q;
+    Eigen::Vector3d inital_w;
+    geometry_msgs::Quaternion ini_q_msg;
+    geometry_msgs::Point ini_w_msg;
 
     for (int i = 0; i < N_sample_pts; i++) {
 
@@ -56,13 +62,18 @@ class SplineTrajSampler
       geometry_msgs::Point acc_t;
       geometry_msgs::Point jerk_t;
       geometry_msgs::Point snap_t;
+
       double thrust;
       geometry_msgs::Point moment;
 
-
       Eigen::Vector3d yaw_three_der = Eigen::Vector3d(0, 0, 0);
-      Eigen::Vector3d M = compute_ref_inputs(pos[i], vel[i], acc[i], jerk[i], snap[i], yaw_three_der, thrust, moment);
+      Eigen::Vector3d M = compute_ref_inputs(pos[i], vel[i], acc[i], jerk[i], snap[i], yaw_three_der, thrust, moment, initial_q, inital_w);
       
+      if (i == 0){
+        tf::quaternionEigenToMsg	(	initial_q, ini_q_msg);
+        tf::pointEigenToMsg	(	inital_w, ini_w_msg);
+      }
+
       jerk_abs_sum += acc[i].squaredNorm()*dt;
       total_ref_F += abs(thrust)*dt;
       total_ref_M += M.norm()*dt;
@@ -95,6 +106,9 @@ class SplineTrajSampler
     }
     traj_discretized.t =  linspace(0.0, total_time1, N_sample_pts);
     traj_discretized.N = N_sample_pts;
+    traj_discretized.inital_attitude = ini_q_msg;
+    traj_discretized.initial_omega = ini_w_msg;
+    ros::Duration(0.5).sleep(); // this is for yuwei's planner to finish so we have polytope info
     this->pub_.publish(traj_discretized);
     N_iter_++;
   }
@@ -113,7 +127,8 @@ class SplineTrajSampler
 
   private:
 
-  Eigen::Vector3d compute_ref_inputs(Eigen::Vector3d pos, Eigen::Vector3d vel, Eigen::Vector3d acc, Eigen::Vector3d jerk, Eigen::Vector3d snap, Eigen::Vector3d yaw_dyaw_ddyaw, double& thrust, geometry_msgs::Point& moment){
+  Eigen::Vector3d compute_ref_inputs(Eigen::Vector3d pos, Eigen::Vector3d vel, Eigen::Vector3d acc, Eigen::Vector3d jerk, Eigen::Vector3d snap, 
+  Eigen::Vector3d yaw_dyaw_ddyaw, double& thrust, geometry_msgs::Point& moment, Eigen::Quaterniond& initial_q, Eigen::Vector3d& initial_w){
 
     // Desired force vector.
     Eigen::Vector3d t = acc + Eigen::Vector3d(0, 0, g_);
@@ -132,6 +147,8 @@ class SplineTrajSampler
     Eigen::Matrix3d R_des;
     R_des << b1_des, b2_des, b3_des;
 
+    initial_q = R_des;
+
     Eigen::Matrix3d R = R_des; // assume we have perfect tracking on rotation
 
     // Following section follows Mellinger paper to compute reference angular velocity
@@ -142,6 +159,8 @@ class SplineTrajSampler
     Eigen::Vector3d w_des(0, 0, yaw_dyaw_ddyaw[1]);
     double r = w_des.dot(b3_des);
     Eigen::Vector3d Omega(p, q, r);
+
+    initial_w = Omega;
 
     Eigen::Vector3d wwu1b3 = Omega.cross(Omega.cross(u1 * b3) );
     double ddot_u1 = b3.dot(mass_ * snap) - b3.dot(wwu1b3);
@@ -181,12 +200,11 @@ class SplineTrajSampler
     /**
      * This tutorial demonstrates simple sending of messages over the ROS system.
      */
-    std::vector<float> differentiate(
-        const std::vector<float>& p)  {
+    std::vector<float> differentiate(const std::vector<float>& p, float segment_time)  {
       if (p.size() < 2) return std::vector<float>();
       std::vector<float> v;
       for (int i = 1; i < p.size(); i++) {
-        v.push_back(p[i] * static_cast<float>(i));
+        v.push_back(p[i] * static_cast<float>(i) / segment_time);
       }
       return v;
     }
@@ -202,7 +220,7 @@ class SplineTrajSampler
         for (auto poly : spline.segs) {
           auto poly_coeffs = poly.coeffs;
           for (int d = 0; d < deriv_num; d++) {
-            poly_coeffs = differentiate(poly_coeffs);
+            poly_coeffs = differentiate(poly_coeffs, poly.dt);
           }
           result(dim) = poly_coeffs[0];
 
@@ -223,7 +241,8 @@ class SplineTrajSampler
         const kr_planning_msgs::SplineTrajectory& msg, int N, int deriv_num, double& total_time) {
       std::vector<Eigen::VectorXd> ps(N + 1);
       total_time = msg.data[0].t_total;
-      if (total_time > time_limit_) total_time = time_limit_; //for a max of 6 seconds, too long make ilqr sovler fail
+      // std::cout<<"total_time: "<<total_time<<std::endl;
+      // if (total_time > time_limit_) total_time = time_limit_; //for a max of 6 seconds, too long make ilqr sovler fail
       double dt = total_time / N;
       for (int i = 0; i <= N; i++) ps.at(i) = evaluate(msg, i * dt, deriv_num);
 

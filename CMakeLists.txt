@@ -11,6 +11,7 @@ find_package(catkin REQUIRED COMPONENTS
   kr_planning_msgs
   roscpp
   state_machine
+  eigen_conversions
 )
 
 
