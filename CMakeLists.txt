@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.0.2)
 project(kr_ilqr_optimizer)
 
 ## Compile as C++11, supported in ROS Kinetic and newer
-# add_compile_options(-std=c++11)
+add_compile_options(-std=c++17)
 
 ## Find catkin macros and libraries
 ## if COMPONENTS list like find_package(catkin REQUIRED COMPONENTS xyz)
@@ -17,7 +17,13 @@ find_package(catkin REQUIRED COMPONENTS
 
 ## System dependencies are found with CMake's conventions
 # find_package(Boost REQUIRED COMPONENTS system)
-find_package(Eigen3 REQUIRED)
+find_package(Eigen3 3.4 REQUIRED) # for ilqr stuff
+
+# altro
+set(CMAKE_PREFIX_PATH /home/yifei/altro_install)
+find_package(altro 0.1 REQUIRED)
+find_package(fmt REQUIRED)
+
 
 ## Uncomment this if the package has a setup.py. This macro ensures
 ## modules and global scripts declared therein get installed
@@ -124,10 +130,29 @@ include_directories(
 )
 
 ## Declare a C++ library
-# add_library(${PROJECT_NAME}
-#   src/${PROJECT_NAME}/kr_ilqr_optimizer.cpp
-# )
+add_library(altro_test_utils
+  src/test_utils.cpp
+)
 
+add_library(finitediff 
+  src/finitediff.cpp
+) 
+
+target_link_libraries(altro_test_utils
+  PUBLIC
+  altro::altro
+  fmt::fmt
+  Eigen3::Eigen
+  finitediff
+)
+target_link_libraries(finitediff
+  PUBLIC
+  Eigen3::Eigen
+  )
+target_compile_definitions(altro_test_utils
+  PUBLIC
+  ALTRO_TEST_DIR="/home/yifei/Documents/optimal_ctrl/altro/test"
+)
 ## Add cmake target dependencies of the library
 ## as an example, code may need to be generated before libraries
 ## either from message generation or dynamic reconfigure
@@ -150,6 +175,7 @@ add_executable(sampler_pub src/spline_trajectory_sampler.cpp)
 
 ## Specify libraries to link a library or executable target against
 target_link_libraries(sampler_pub PUBLIC ${catkin_LIBRARIES} Eigen3::Eigen)
+target_link_libraries(sampler_pub PRIVATE altro::altro fmt::fmt altro_test_utils)
 
 #############
 ## Install ##

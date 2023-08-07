@@ -15,6 +15,10 @@
 #include <std_msgs/Int32.h>
 
 #include <sstream>
+#include "altro/altro.hpp"
+#include "test_utils.hpp"
+#include "finitediff.hpp"
+#include "quadMPC.hpp"
 class SplineTrajSampler
 {
   public:
@@ -274,6 +278,17 @@ int main(int argc, char **argv)
 
   // std::shared_ptr<SplineTrajectoryVisual> visual_;
   SplineTrajSampler sampler;
+  altro::ALTROSolver solver(10);
+  solver.SetDimension(13, 4, 0, altro::LastIndex);
+  fmt::print("Solver Initialized!\n");
+
+  quadMPC mpc_solver;
+  mpc_solver.SetUp();
+
+  
+    fmt::print("Setup success\n");
+
+  mpc_solver.eg1();
 
   ros::spin();
   return 0;
