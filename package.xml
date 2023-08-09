@@ -57,6 +57,7 @@
   <exec_depend>roscpp</exec_depend>
   <depend>state_machine</depend>
   <depend>eigen_conversions</depend>
+  <depend>visualization_msgs</depend>
   <!-- <depend>eigen_conversions</depend> -->
 
 

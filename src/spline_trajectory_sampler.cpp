@@ -1,6 +1,7 @@
 #include "ros/ros.h"
 #include <kr_planning_msgs/SplineTrajectory.h>
 #include <kr_planning_msgs/TrajectoryDiscretized.h>
+#include <visualization_msgs/Marker.h>
 #include <eigen_conversions/eigen_msg.h>
 // #include <kr_planning_rviz_plugins/spline_trajectory_visual.h>
 #include <boost/bind.hpp>
@@ -13,12 +14,16 @@
 #include "ros/ros.h"
 #include <std_msgs/Float64.h>
 #include <std_msgs/Int32.h>
+#include <std_msgs/Header.h>
+#include <std_msgs/ColorRGBA.h>
 
 #include <sstream>
 #include "altro/altro.hpp"
 #include "test_utils.hpp"
 #include "finitediff.hpp"
 #include "quadMPC.hpp"
+using Vector = Eigen::Matrix<a_float, Eigen::Dynamic, 1>;
+
 class SplineTrajSampler
 {
   public:
@@ -26,17 +31,21 @@ class SplineTrajSampler
     ros::NodeHandle n;
     pub_ = n.advertise<kr_planning_msgs::TrajectoryDiscretized>("spline_traj_samples", 1);
     opt_pub_ = n.advertise<kr_planning_msgs::TrajectoryDiscretized>("optimized_traj_samples", 1);
+    opt_viz_pub_ = n.advertise<visualization_msgs::Marker>("optimized_traj_samples_viz", 1);
     // sub_ = n.subscribe("/local_plan_server/trajectory", 1, &SplineTrajSampler::callbackWrapper, this);
     sub_ = n.subscribe("/local_plan_server/trajectory_planner/search_trajectory", 1, &SplineTrajSampler::callbackWrapper, this);
     if (write_summary_to_file_){
       poly_array_file.open("/home/yifei/planning_summary.csv",std::ios_base::app);
       poly_array_file << "Planning Iteration, Starting x, Jerk Norm Sum, Traj Time, Total_Ref_Fdt, Total_Ref_Mdt \n";
     }
+    mpc_solver.SetUp();
   
   }
   void callbackWrapper(const kr_planning_msgs::SplineTrajectory::ConstPtr& msg);
 
   protected:
+  int N_sample_pts = 30;
+  quadMPC mpc_solver;
   bool compute_altro_ = true;
   bool write_summary_to_file_ = false;
   uint N_iter_ = 0;
@@ -45,7 +54,8 @@ class SplineTrajSampler
   ros::Subscriber sub_;
   ros::Publisher pub_;
   ros::Publisher opt_pub_;
-  double time_limit_ = 5.0;
+  ros::Publisher opt_viz_pub_;
+  double time_limit_ = 2;
   double g_ = 9.81;
   double mass_ = 0.5;
   Eigen::DiagonalMatrix<double, 3> inertia_ = Eigen::DiagonalMatrix<double, 3> (0.0023, 0.0023, 0.004);
@@ -53,14 +63,14 @@ class SplineTrajSampler
   private:
 
   void publish_altro(std::vector<Eigen::Vector3d> pos, std::vector<Eigen::Vector3d> vel, std::vector<Eigen::Vector3d> acc, std::vector<double> yaw_ref,
-                                std::vector<double> thrust, std::vector<Eigen::Vector3d> moment, std::vector<double> t, int N, Eigen::Quaterniond qi, Eigen::Vector3d wi);
+                                std::vector<double> thrust, std::vector<Eigen::Vector3d> moment, std::vector<double> t, int N, std::vector<Eigen::Quaterniond> q_ref, std::vector<Eigen::Vector3d> w_ref, std_msgs::Header header);
   Eigen::Vector3d compute_ref_inputs(Eigen::Vector3d pos, Eigen::Vector3d vel, Eigen::Vector3d acc, Eigen::Vector3d jerk, Eigen::Vector3d snap, 
-        Eigen::Vector3d yaw_dyaw_ddyaw, double& thrust, geometry_msgs::Point& moment, Eigen::Quaterniond& initial_q, Eigen::Vector3d& initial_w);
+        Eigen::Vector3d yaw_dyaw_ddyaw, double& thrust, geometry_msgs::Point& moment, Eigen::Quaterniond& q_return, Eigen::Vector3d& initial_w);
 
-  void unpack(geometry_msgs::Point& p, const Eigen::Vector3d& v) {
-    p.x = v(0);
-    p.y = v(1);
-    p.z = v(2);
+  void unpack(geometry_msgs::Point& p, const Eigen::VectorXd& v, int start_idx = 0) {
+    p.x = v(start_idx);
+    p.y = v(start_idx + 1);
+    p.z = v(start_idx + 2);
   }
 
   std::vector<double> linspace(double start, double end, int numPoints) {
@@ -122,7 +132,7 @@ class SplineTrajSampler
       std::vector<Eigen::Vector3d> ps(N + 1);
       // std::cout<<"total_time: "<<total_time<<std::endl;
       // if (total_time > time_limit_) total_time = time_limit_; //for a max of 6 seconds, too long make ilqr sovler fail
-      double dt = msg.data[0].t_total / N;
+      double dt = time_limit_ / N;
       for (int i = 0; i <= N; i++) ps.at(i) = evaluate(msg, i * dt, deriv_num);
 
       return ps;
@@ -131,7 +141,7 @@ class SplineTrajSampler
 };
 
 Eigen::Vector3d SplineTrajSampler::compute_ref_inputs(Eigen::Vector3d pos, Eigen::Vector3d vel, Eigen::Vector3d acc, Eigen::Vector3d jerk, Eigen::Vector3d snap, 
-        Eigen::Vector3d yaw_dyaw_ddyaw, double& thrust, geometry_msgs::Point& moment, Eigen::Quaterniond& initial_q, Eigen::Vector3d& initial_w) {
+        Eigen::Vector3d yaw_dyaw_ddyaw, double& thrust, geometry_msgs::Point& moment, Eigen::Quaterniond& q_return, Eigen::Vector3d& initial_w) {
     // Desired force vector.
     Eigen::Vector3d t = acc + Eigen::Vector3d(0, 0, g_);
     Eigen::Vector3d b3 = t.normalized();
@@ -149,7 +159,7 @@ Eigen::Vector3d SplineTrajSampler::compute_ref_inputs(Eigen::Vector3d pos, Eigen
     Eigen::Matrix3d R_des;
     R_des << b1_des, b2_des, b3_des;
 
-    initial_q = R_des;
+    q_return = R_des;
 
     Eigen::Matrix3d R = R_des; // assume we have perfect tracking on rotation
 
@@ -180,15 +190,42 @@ Eigen::Vector3d SplineTrajSampler::compute_ref_inputs(Eigen::Vector3d pos, Eigen
   }
 
 void SplineTrajSampler::publish_altro(std::vector<Eigen::Vector3d> pos, std::vector<Eigen::Vector3d> vel, std::vector<Eigen::Vector3d> acc, std::vector<double> yaw_ref,
-                                std::vector<double> thrust, std::vector<Eigen::Vector3d> moment, std::vector<double> t, int N, Eigen::Quaterniond qi, Eigen::Vector3d wi){
-    std::cout<<"N: "<<N<<std::endl;
-                                }
+                                std::vector<double> thrust, std::vector<Eigen::Vector3d> moment, std::vector<double> t, int N, std::vector<Eigen::Quaterniond> q_ref, std::vector<Eigen::Vector3d> w_ref, std_msgs::Header header){
+    std::vector<Vector> X_sim;
+    std::vector<Vector> U_sim;
+    std::vector<double> t_sim;
+    mpc_solver.solve_problem(pos, vel, acc, yaw_ref, thrust, moment, t, N, q_ref, w_ref, X_sim, U_sim, t_sim);
+    kr_planning_msgs::TrajectoryDiscretized traj;
+    traj.header = header;//TODO: ASK LAURA
+    traj.header.stamp = ros::Time::now();
+    visualization_msgs::Marker viz_msg;
+    viz_msg.type = 4;
+    viz_msg.header = header;
+    viz_msg.header.stamp = ros::Time::now();
+    viz_msg.scale.x = 0.2;
+    for (int i = 0; i < N_sample_pts; i++) {
+      // std::cout<<"idx "<< i <<std::endl;
+
+      geometry_msgs::Point pos_t;
+      geometry_msgs::Point vel_t;
+      geometry_msgs::Point acc_t;
+      unpack(pos_t, X_sim[i]);
+      unpack(vel_t, X_sim[i], 7); // x y z q1 q2 q3 q4 v1 v2 v3 w1 w2 w3
+      // std::cout<<X_sim[i]<<std::endl;
+
+      viz_msg.points.push_back(pos_t);
+      viz_msg.color.a = 1.0 ;//= std_msgs::ColorRGBA(
+
+    }
+
+    opt_viz_pub_.publish(viz_msg);
+  }
 
 void SplineTrajSampler::callbackWrapper(const kr_planning_msgs::SplineTrajectory::ConstPtr& msg)
 {
     kr_planning_msgs::SplineTrajectory traj= *msg;
-    int N_sample_pts = 100;
-    double total_time = traj.data[0].t_total;
+    // double total_time = traj.data[0].t_total;
+    double total_time = time_limit_; 
     std::vector<Eigen::Vector3d> pos = sample(traj, N_sample_pts, 0);
     std::vector<Eigen::Vector3d> vel = sample(traj, N_sample_pts, 1);
     std::vector<Eigen::Vector3d> acc = sample(traj, N_sample_pts, 2);
@@ -201,13 +238,15 @@ void SplineTrajSampler::callbackWrapper(const kr_planning_msgs::SplineTrajectory
     double jerk_abs_sum = 0.0;
     double total_ref_F = 0.0;
     double total_ref_M = 0.0;
-    Eigen::Quaterniond initial_q;
-    Eigen::Vector3d inital_w;
+    Eigen::Quaterniond q_return;
+    Eigen::Vector3d w_return;
     geometry_msgs::Quaternion ini_q_msg;
     geometry_msgs::Point ini_w_msg;
     std::vector<double> yaw_ref(N_sample_pts);
     std::vector<double> thrust_ref(N_sample_pts);
     std::vector<Eigen::Vector3d> moment_ref(N_sample_pts);
+    std::vector<Eigen::Quaterniond> q_ref(N_sample_pts);
+    std::vector<Eigen::Vector3d> w_ref(N_sample_pts);
 
     
 
@@ -224,14 +263,17 @@ void SplineTrajSampler::callbackWrapper(const kr_planning_msgs::SplineTrajectory
 
       Eigen::Vector3d yaw_three_der = Eigen::Vector3d(0, 0, 0);
       yaw_ref[i] = yaw_three_der[0];
-      Eigen::Vector3d M = compute_ref_inputs(pos[i], vel[i], acc[i], jerk[i], snap[i], yaw_three_der, thrust, moment, initial_q, inital_w);
+      Eigen::Vector3d M = compute_ref_inputs(pos[i], vel[i], acc[i], jerk[i], snap[i], yaw_three_der, thrust, moment, q_return, w_return);
       moment_ref[i] = M;
       thrust_ref[i] = thrust;
 
       if (i == 0){
-        tf::quaternionEigenToMsg	(	initial_q, ini_q_msg);
-        tf::pointEigenToMsg	(	inital_w, ini_w_msg);
+        tf::quaternionEigenToMsg	(	q_return, ini_q_msg);
+        tf::pointEigenToMsg	(	w_return, ini_w_msg);
       }
+      // std::cout<<"rot q = "<<q_return.w()<<q_return.vec() <<std::endl;
+      q_ref[i] = q_return;
+      w_ref[i] = w_return;
 
       jerk_abs_sum += acc[i].squaredNorm()*dt;
       total_ref_F += abs(thrust)*dt;
@@ -269,11 +311,11 @@ void SplineTrajSampler::callbackWrapper(const kr_planning_msgs::SplineTrajectory
     traj_discretized.N = N_sample_pts;
     traj_discretized.inital_attitude = ini_q_msg;
     traj_discretized.initial_omega = ini_w_msg;
-    ros::Duration(0.5).sleep(); // this is for yuwei's planner to finish so we have polytope info
-    ROS_ERROR("SLEEPING 0.5 sec to wait for polytope info");
+    // ros::Duration(0.5).sleep(); // this is for yuwei's planner to finish so we have polytope info
+    // ROS_ERROR("SLEEPING 0.5 sec to wait for polytope info");
     this->pub_.publish(traj_discretized);
     // do optimization here if needed
-    if (compute_altro_) publish_altro(pos, vel, acc, yaw_ref, thrust_ref, moment_ref, t, N_sample_pts, initial_q, inital_w);
+    if (compute_altro_) publish_altro(pos, vel, acc, yaw_ref, thrust_ref, moment_ref, t, N_sample_pts, q_ref, w_ref, traj.header);
     N_iter_++;
   }
 
@@ -299,18 +341,6 @@ int main(int argc, char **argv)
 
   // std::shared_ptr<SplineTrajectoryVisual> visual_;
   SplineTrajSampler sampler;
-  altro::ALTROSolver solver(10);
-  solver.SetDimension(13, 4, 0, altro::LastIndex);
-  fmt::print("Solver Initialized!\n");
-
-  quadMPC mpc_solver;
-  mpc_solver.SetUp();
-
-  
-    fmt::print("Setup success\n");
-
-  mpc_solver.eg1();
-
   ros::spin();
   return 0;
 }

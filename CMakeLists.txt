@@ -12,6 +12,7 @@ find_package(catkin REQUIRED COMPONENTS
   roscpp
   state_machine
   eigen_conversions
+  visualization_msgs
 )
 
 
@@ -113,7 +114,7 @@ find_package(fmt REQUIRED)
 catkin_package(
  INCLUDE_DIRS include
  LIBRARIES kr_ilqr_optimizer
- CATKIN_DEPENDS kr_planning_msgs roscpp
+ CATKIN_DEPENDS kr_planning_msgs roscpp visualization_msgs state_machine
  DEPENDS system_lib
 )
 
