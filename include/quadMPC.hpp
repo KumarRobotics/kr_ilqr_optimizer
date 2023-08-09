@@ -100,6 +100,39 @@ class quadMPC {
     err = solver.SetQuaternionCost(n, m, Qdf.data(), Rd.data(), 1.0, xf.data(), u_ref_single.data(),N);  
     err = solver.SetInitialState(xf.data(), n);
 
+
+    // Constraints
+    const a_float max_thrust = model_ptr->max_thrust_per_prop;
+    const a_float min_thrust = model_ptr->min_thrust_per_prop;
+    auto actuator_con = [max_thrust, min_thrust](a_float *c, const a_float *x, const a_float *u) {
+      (void)x;
+      // < 0 format
+      c[0] = u[0] - max_thrust;
+      c[1] = u[1] - max_thrust;
+      c[2] = u[2] - max_thrust;
+      c[3] = u[3] - max_thrust;
+      c[4] = min_thrust - u[0];
+      c[5] = min_thrust - u[1];
+      c[6] = min_thrust - u[2];
+      c[7] = min_thrust - u[3];
+    };
+    auto actuator_jac = [](a_float *jac, const a_float *x, const a_float *u) {
+      (void)x;
+      (void)u;
+      Eigen::Map<Eigen::Matrix<a_float, 8, 17>> J(jac);
+      J.setZero();
+      J(0, 13) = 1.0;
+      J(1, 14) = 1.0;
+      J(2, 15) = 1.0;
+      J(3, 16) = 1.0;
+      J(4, 13) = -1.0;
+      J(5, 14) = -1.0;
+      J(6, 15) = -1.0;
+      J(7, 16) = -1.0;
+    };
+    err = solver.SetConstraint(actuator_con, actuator_jac, 8, ConstraintType::INEQUALITY,
+                               "Actuator Min Max", 0, N + 1);
+
     // Initialize Solver
     err = solver.Initialize();
     fmt::print("Solver Initialized!\n");

@@ -84,6 +84,8 @@ class quadModel {
   static constexpr int NumStates = 13;
   static constexpr int NumInputs = 4;
   double get_hover_input() const {return mass_ *9.81/4.0/ kf_;}
+  float max_thrust_per_prop = 8;
+  float min_thrust_per_prop = 0;
 
  private:
   ReferenceFrame reference_frame_;
