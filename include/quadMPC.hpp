@@ -29,7 +29,7 @@ using Eigen::VectorXi;
 
 class quadMPC {
  public:
-  quadMPC() : solver(N) {}
+  quadMPC(int N, double t_ref_, bool use_quaternion) : N(N), t_ref_(t_ref_), solver(N) {}
   void SetUp() {
     // Objective
     std::cout<< "Size of Problem N = "<< N << std::endl;
@@ -66,7 +66,7 @@ class quadMPC {
 
     // Read Reference Trajectory
     int N_ref = N;
-    float t_ref = 2;
+    float t_ref = t_ref_;
 
     u_ref_single = Vector::Constant(m, model_ptr->get_hover_input());
     std::cout << "u_ref_single = " << u_ref_single << std::endl;
@@ -83,21 +83,19 @@ class quadMPC {
     err = solver.SetTimeStep(h);
 
     fmt::print("Set TimeStep Finished!\n");
-    PrintErrorCode(err);
 
     Eigen::Matrix<double,13,1> xf;
     xf << 0.,0.,0., 1.0, 0.0, 0.0, 0.0,  0,0,0, 0,0,0;
     for (int k = 0; k <= N-1; ++k) {
       // std::cout << k << std::endl;
-      // err = solver.SetLQRCost(n, m, Qd.data(), Rd.data(), xf.data(), u_ref_single.data(), k);
-
-      err = solver.SetQuaternionCost(n, m, Qd.data(), Rd.data(), 1.0, xf.data(), u_ref_single.data(), k);
-      PrintErrorCode(err);
+      if (use_quaternion) {err = solver.SetQuaternionCost(n, m, Qd.data(), Rd.data(), 1.0, xf.data(), u_ref_single.data(), k);}
+      else {err = solver.SetLQRCost(n, m, Qd.data(), Rd.data(), xf.data(), u_ref_single.data(), k);}
       // fmt::print("Print error\n");
     }
     // err = solver.SetLQRCost(n, m, Qdf.data(), Rd.data(), xf.data(), u_ref_single.data(), N);
-
-    err = solver.SetQuaternionCost(n, m, Qdf.data(), Rd.data(), 1.0, xf.data(), u_ref_single.data(),N);  
+    if (use_quaternion) {err = solver.SetQuaternionCost(n, m, Qdf.data(), Rd.data(), 1.0, xf.data(), u_ref_single.data(), N);}
+    else {err = solver.SetLQRCost(n, m, Qdf.data(), Rd.data(), xf.data(), u_ref_single.data(), N);}
+    // err = solver.SetQuaternionCost(n, m, Qdf.data(), Rd.data(), 1.0, xf.data(), u_ref_single.data(),N);  
     err = solver.SetInitialState(xf.data(), n);
 
 
@@ -136,27 +134,28 @@ class quadMPC {
     // Initialize Solver
     err = solver.Initialize();
     fmt::print("Solver Initialized!\n");
-    PrintErrorCode(err);
 
     // Solve
     AltroOptions opts;
-    opts.verbose = Verbosity::LineSearch;
-    opts.iterations_max = 20;
+    opts.verbose = Verbosity::Silent;
+    opts.iterations_max = 40;
     opts.use_backtracking_linesearch = true;
-    opts.use_quaternion = true;
     opts.quat_start_index = 3;  // THIS IS VERY IMPORTANT!
     solver.SetOptions(opts);
 
   }
   protected:
+     int N; 
+     double t_ref_;
+
     const int n = quadModel::NumStates;
     const int m = quadModel::NumInputs;
-    const int N = 30;
     float h;
 
     Vector Qd;
     Vector Rd;
     Vector Qdf;
+    bool use_quaternion;
 
     ExplicitDynamicsFunction dyn;
     ExplicitDynamicsJacobian jac;
@@ -205,27 +204,25 @@ class quadMPC {
 
         x_ref_k << pos[k], q_ref[k].w(), q_ref[k].vec(), vel[k], w_ref[k];
         // std::cout << k << std::endl;
-        // err = solver.SetLQRCost(n, m, Qd.data(), Rd.data(), x_ref_k.data(), u_ref_single.data(), k);
-     
-        err = solver.SetQuaternionCost(n, m, Qd.data(), Rd.data(), 1.0, x_ref_k.data(), u_ref_single.data(), k);        
+        // 
+        
+        if (use_quaternion) {err = solver.SetQuaternionCost(n, m, Qd.data(), Rd.data(), 1.0, x_ref_k.data(), u_ref_single.data(), k);}
+        else{err = solver.SetLQRCost(n, m, Qd.data(), Rd.data(), x_ref_k.data(), u_ref_single.data(), k);}        
         // PrintErrorCode(err);
         // fmt::print("Print error\n");
         err = solver.SetState(x_ref_k.data(), n, k);
 
       }
-        // err = solver.SetLQRCost(n, m, Qdf.data(), Rd.data(), xf.data(), u_ref_single.data(), N);
-        err = solver.SetState(xf.data(), n, N);
-
-        err = solver.SetQuaternionCost(n, m, Qdf.data(), Rd.data(), 1.0, xf.data(), u_ref_single.data(), N);   
-        PrintErrorCode(err);
-      // fmt::print("Set Cost Finished!\n");
+      if (use_quaternion) {err = solver.SetQuaternionCost(n, m, Qdf.data(), Rd.data(), 1.0, xf.data(), u_ref_single.data(), N);}
+      else {err = solver.SetLQRCost(n, m, Qdf.data(), Rd.data(), xf.data(), u_ref_single.data(), N);}
+        // 
+      err = solver.SetState(xf.data(), n, N);
 
         // Initial State
       err = solver.SetInitialState(x0.data(), n);
 
       // Set Initial Trajectory
       err = solver.SetInput(u_ref_single.data(), m);
-      PrintErrorCode(err);
       // fmt::print("Set Input Finished!\n");
 
       solver.OpenLoopRollout();

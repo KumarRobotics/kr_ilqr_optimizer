@@ -28,6 +28,8 @@ class SplineTrajSampler
 {
   public:
   SplineTrajSampler(){
+    bool use_quat = false;
+    mpc_solver = new quadMPC(N_sample_pts_, time_limit_, use_quat);
     ros::NodeHandle n;
     sampld_traj_pub_ = n.advertise<kr_planning_msgs::TrajectoryDiscretized>("spline_traj_samples", 1);
     opt_traj_pub_ = n.advertise<kr_planning_msgs::TrajectoryDiscretized>("optimized_traj_samples", 1);
@@ -38,14 +40,16 @@ class SplineTrajSampler
       poly_array_file.open("/home/yifei/planning_summary.csv",std::ios_base::app);
       poly_array_file << "Planning Iteration, Starting x, Jerk Norm Sum, Traj Time, Total_Ref_Fdt, Total_Ref_Mdt \n";
     }
-    mpc_solver.SetUp();
+    mpc_solver->SetUp();
   
   }
   void callbackWrapper(const kr_planning_msgs::SplineTrajectory::ConstPtr& msg);
 
   protected:
-  int N_sample_pts = 30;
-  quadMPC mpc_solver;
+  int N_sample_pts_ = 40;
+  double time_limit_ = 4;
+
+  quadMPC * mpc_solver;
   bool compute_altro_ = true;
   bool write_summary_to_file_ = false;
   uint N_iter_ = 0;
@@ -55,7 +59,6 @@ class SplineTrajSampler
   ros::Publisher sampld_traj_pub_;
   ros::Publisher opt_traj_pub_;
   ros::Publisher opt_viz_pub_;
-  double time_limit_ = 2;
   double g_ = 9.81;
   double mass_ = 0.5;
   Eigen::DiagonalMatrix<double, 3> inertia_ = Eigen::DiagonalMatrix<double, 3> (0.0023, 0.0023, 0.004);
@@ -194,7 +197,7 @@ void SplineTrajSampler::publish_altro(std::vector<Eigen::Vector3d> pos, std::vec
     std::vector<Vector> X_sim;
     std::vector<Vector> U_sim;
     std::vector<double> t_sim;
-    mpc_solver.solve_problem(pos, vel, acc, yaw_ref, thrust, moment, t, N, q_ref, w_ref, X_sim, U_sim, t_sim);
+    mpc_solver->solve_problem(pos, vel, acc, yaw_ref, thrust, moment, t, N, q_ref, w_ref, X_sim, U_sim, t_sim);
     //DEAL WITH VIZ
     visualization_msgs::Marker viz_msg;
     viz_msg.type = 4;
@@ -206,9 +209,9 @@ void SplineTrajSampler::publish_altro(std::vector<Eigen::Vector3d> pos, std::vec
     kr_planning_msgs::TrajectoryDiscretized traj;
     traj.header = header;//TODO: ASK LAURA
     traj.header.stamp = ros::Time::now();
-    traj.N = N_sample_pts;
+    traj.N = N_sample_pts_;
 
-    for (int i = 0; i < N_sample_pts; i++) {
+    for (int i = 0; i < N_sample_pts_; i++) {
       //unpack points . THIS CODE IS SIMILAR TO NEXT SECTION FOR UNPACKING, write a function!
       geometry_msgs::Point pos_t;
       geometry_msgs::Point vel_t;
@@ -242,12 +245,12 @@ void SplineTrajSampler::callbackWrapper(const kr_planning_msgs::SplineTrajectory
     kr_planning_msgs::SplineTrajectory traj= *msg;
     // double total_time = traj.data[0].t_total;
     double total_time = time_limit_; 
-    std::vector<Eigen::Vector3d> pos = sample(traj, N_sample_pts, 0);
-    std::vector<Eigen::Vector3d> vel = sample(traj, N_sample_pts, 1);
-    std::vector<Eigen::Vector3d> acc = sample(traj, N_sample_pts, 2);
-    std::vector<Eigen::Vector3d> jerk = sample(traj, N_sample_pts, 3);
-    std::vector<Eigen::Vector3d> snap = sample(traj, N_sample_pts, 4);
-    double dt = total_time/N_sample_pts;
+    std::vector<Eigen::Vector3d> pos = sample(traj, N_sample_pts_, 0);
+    std::vector<Eigen::Vector3d> vel = sample(traj, N_sample_pts_, 1);
+    std::vector<Eigen::Vector3d> acc = sample(traj, N_sample_pts_, 2);
+    std::vector<Eigen::Vector3d> jerk = sample(traj, N_sample_pts_, 3);
+    std::vector<Eigen::Vector3d> snap = sample(traj, N_sample_pts_, 4);
+    double dt = total_time/N_sample_pts_;
 
     kr_planning_msgs::TrajectoryDiscretized traj_discretized; 
     traj_discretized.header = traj.header;
@@ -258,15 +261,15 @@ void SplineTrajSampler::callbackWrapper(const kr_planning_msgs::SplineTrajectory
     Eigen::Vector3d w_return;
     geometry_msgs::Quaternion ini_q_msg;
     geometry_msgs::Point ini_w_msg;
-    std::vector<double> yaw_ref(N_sample_pts);
-    std::vector<double> thrust_ref(N_sample_pts);
-    std::vector<Eigen::Vector3d> moment_ref(N_sample_pts);
-    std::vector<Eigen::Quaterniond> q_ref(N_sample_pts);
-    std::vector<Eigen::Vector3d> w_ref(N_sample_pts);
+    std::vector<double> yaw_ref(N_sample_pts_);
+    std::vector<double> thrust_ref(N_sample_pts_);
+    std::vector<Eigen::Vector3d> moment_ref(N_sample_pts_);
+    std::vector<Eigen::Quaterniond> q_ref(N_sample_pts_);
+    std::vector<Eigen::Vector3d> w_ref(N_sample_pts_);
 
     
 
-    for (int i = 0; i < N_sample_pts; i++) {
+    for (int i = 0; i < N_sample_pts_; i++) {
 
       geometry_msgs::Point pos_t;
       geometry_msgs::Point vel_t;
@@ -322,16 +325,16 @@ void SplineTrajSampler::callbackWrapper(const kr_planning_msgs::SplineTrajectory
       //compute the total snap at 100 points
     }
 
-    std::vector<double> t = linspace(0.0, total_time, N_sample_pts);
+    std::vector<double> t = linspace(0.0, total_time, N_sample_pts_);
     traj_discretized.t =  t;
-    traj_discretized.N = N_sample_pts;
+    traj_discretized.N = N_sample_pts_;
     traj_discretized.inital_attitude = ini_q_msg;
     traj_discretized.initial_omega = ini_w_msg;
     // ros::Duration(0.5).sleep(); // this is for yuwei's planner to finish so we have polytope info
     // ROS_ERROR("SLEEPING 0.5 sec to wait for polytope info");
     this->sampld_traj_pub_.publish(traj_discretized);
     // do optimization here if needed
-    if (compute_altro_) publish_altro(pos, vel, acc, yaw_ref, thrust_ref, moment_ref, t, N_sample_pts, q_ref, w_ref, traj.header);
+    if (compute_altro_) publish_altro(pos, vel, acc, yaw_ref, thrust_ref, moment_ref, t, N_sample_pts_, q_ref, w_ref, traj.header);
     N_iter_++;
   }
 

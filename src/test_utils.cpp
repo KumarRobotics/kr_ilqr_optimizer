@@ -443,7 +443,7 @@ void quadModel::finite_jacobian_quad_xu(double *jac, const double *x, const doub
   Eigen::MatrixXd dfc_du(13, 4);
 
   const double eps = 1e-6;
-  fd::AccuracyOrder accuracy = fd::EIGHTH;
+  fd::AccuracyOrder accuracy = fd::FOURTH;
   const std::vector<double> external_coeffs = fd::get_external_coeffs(accuracy);
   const std::vector<double> internal_coeffs = fd::get_interior_coeffs(accuracy);
   assert(external_coeffs.size() == internal_coeffs.size());
@@ -499,29 +499,6 @@ void quadModel::finite_jacobian_quad_xu(double *jac, const double *x, const doub
   J.block<13, 13>(0, 0) = dfc_dx;
   J.block<13, 4>(0, 13) = dfc_du;
 }
-
-//     // auto myOneArgFunction = [this, u_vec](const Eigen::VectorXd x_in) { f_quad( x_in, u_vec); };
-
-//     const std::vector<double> external_coeffs = get_external_coeffs(accuracy);
-//     const std::vector<double> internal_coeffs = get_interior_coeffs(accuracy);
-
-//     assert(external_coeffs.size() == internal_coeffs.size());
-//     const size_t inner_steps = internal_coeffs.size();
-
-//     const double denom = get_denominator(accuracy) * eps;
-
-//     jac.setZero(f(x).rows(), x.rows());
-
-//     Eigen::VectorXd x_mutable = x;
-//     for (size_t i = 0; i < x.rows(); i++) {
-//         for (size_t ci = 0; ci < inner_steps; ci++) {
-//             x_mutable[i] += internal_coeffs[ci] * eps;
-//             jac.col(i) += external_coeffs[ci] * model->f_quad(x_mutable, u);
-//             x_mutable[i] = x[i];
-//         }
-//         jac.col(i) /= denom;
-//     }
-// }
 
 void quadModel::Jacobian_fd(double *jac, const double *x, const double *u) const {
 
