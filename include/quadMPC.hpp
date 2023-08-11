@@ -33,9 +33,13 @@ class quadMPC {
   void SetUp() {
     // Objective
     std::cout<< "Size of Problem N = "<< N << std::endl;
-    Qd = Vector::Constant(n, 1e-2);
-    Rd = Vector::Constant(m, 1e-3);
-    Qdf = Vector::Constant(n, 1e1);
+    Qd = Vector::Constant(n, 0);
+    Rd = Vector::Constant(m, 0.1);
+    Qdf = Vector::Constant(n, 0);
+    const int three = 3;
+    Qd.segment<3>(0) = Vector::Constant(three, 0.1);
+    Qdf.segment<3>(0) = Vector::Constant(three, 0.1);
+    Qdf.segment<3>(7) = Vector::Constant(three, 0.1);
 
     // Dynamics
     auto model_ptr = std::make_shared<quadModel>();

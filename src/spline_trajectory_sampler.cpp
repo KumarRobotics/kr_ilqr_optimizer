@@ -46,8 +46,8 @@ class SplineTrajSampler
   void callbackWrapper(const kr_planning_msgs::SplineTrajectory::ConstPtr& msg);
 
   protected:
-  int N_sample_pts_ = 40;
-  double time_limit_ = 4;
+  int N_sample_pts_ = 80;
+  double time_limit_ = 8;
 
   quadMPC * mpc_solver;
   bool compute_altro_ = true;
