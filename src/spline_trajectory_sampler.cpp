@@ -29,8 +29,8 @@ class SplineTrajSampler
   public:
   SplineTrajSampler(){
     ros::NodeHandle n;
-    pub_ = n.advertise<kr_planning_msgs::TrajectoryDiscretized>("spline_traj_samples", 1);
-    opt_pub_ = n.advertise<kr_planning_msgs::TrajectoryDiscretized>("optimized_traj_samples", 1);
+    sampld_traj_pub_ = n.advertise<kr_planning_msgs::TrajectoryDiscretized>("spline_traj_samples", 1);
+    opt_traj_pub_ = n.advertise<kr_planning_msgs::TrajectoryDiscretized>("optimized_traj_samples", 1);
     opt_viz_pub_ = n.advertise<visualization_msgs::Marker>("optimized_traj_samples_viz", 1);
     // sub_ = n.subscribe("/local_plan_server/trajectory", 1, &SplineTrajSampler::callbackWrapper, this);
     sub_ = n.subscribe("/local_plan_server/trajectory_planner/search_trajectory", 1, &SplineTrajSampler::callbackWrapper, this);
@@ -52,8 +52,8 @@ class SplineTrajSampler
   std::ofstream poly_array_file;
   
   ros::Subscriber sub_;
-  ros::Publisher pub_;
-  ros::Publisher opt_pub_;
+  ros::Publisher sampld_traj_pub_;
+  ros::Publisher opt_traj_pub_;
   ros::Publisher opt_viz_pub_;
   double time_limit_ = 2;
   double g_ = 9.81;
@@ -195,30 +195,46 @@ void SplineTrajSampler::publish_altro(std::vector<Eigen::Vector3d> pos, std::vec
     std::vector<Vector> U_sim;
     std::vector<double> t_sim;
     mpc_solver.solve_problem(pos, vel, acc, yaw_ref, thrust, moment, t, N, q_ref, w_ref, X_sim, U_sim, t_sim);
-    kr_planning_msgs::TrajectoryDiscretized traj;
-    traj.header = header;//TODO: ASK LAURA
-    traj.header.stamp = ros::Time::now();
+    //DEAL WITH VIZ
     visualization_msgs::Marker viz_msg;
     viz_msg.type = 4;
     viz_msg.header = header;
     viz_msg.header.stamp = ros::Time::now();
     viz_msg.scale.x = 0.2;
-    for (int i = 0; i < N_sample_pts; i++) {
-      // std::cout<<"idx "<< i <<std::endl;
+    viz_msg.color.a = 1.0 ;
+    //DEAL WITH Actual MSG
+    kr_planning_msgs::TrajectoryDiscretized traj;
+    traj.header = header;//TODO: ASK LAURA
+    traj.header.stamp = ros::Time::now();
+    traj.N = N_sample_pts;
 
+    for (int i = 0; i < N_sample_pts; i++) {
+      //unpack points . THIS CODE IS SIMILAR TO NEXT SECTION FOR UNPACKING, write a function!
       geometry_msgs::Point pos_t;
       geometry_msgs::Point vel_t;
-      geometry_msgs::Point acc_t;
+      geometry_msgs::Point acc_t; //no state here, need to calc from force, stay at 0 for now
+      geometry_msgs::Point moment_t; //no state here, need to calc from force, stay at 0 for now
+      Eigen::Quaterniond q_unpack(X_sim[i][3], X_sim[i][4], X_sim[i][5], X_sim[i][6]);
+      auto RPY = q_unpack.toRotationMatrix().eulerAngles(0, 1, 2);
       unpack(pos_t, X_sim[i]);
       unpack(vel_t, X_sim[i], 7); // x y z q1 q2 q3 q4 v1 v2 v3 w1 w2 w3
-      // std::cout<<X_sim[i]<<std::endl;
-
+      //DEAL WITH VIZ
       viz_msg.points.push_back(pos_t);
-      viz_msg.color.a = 1.0 ;//= std_msgs::ColorRGBA(
+      //DEAL WITH Actual MSG
+      traj.pos.push_back(pos_t);
+      traj.vel.push_back(vel_t);
+      traj.acc.push_back(acc_t);
+      traj.yaw.push_back(RPY[2]);
+      traj.thrust.push_back(U_sim[i].sum());
+      traj.moment.push_back(moment_t);// 0
+      traj.t.push_back(t_sim[i]); //start from 0
+      //initial attitude and initial omega not used
 
     }
-
+    //DEAL WITH VIZ
     opt_viz_pub_.publish(viz_msg);
+    //DEAL WITH Actual MSG
+    opt_traj_pub_.publish(traj);
   }
 
 void SplineTrajSampler::callbackWrapper(const kr_planning_msgs::SplineTrajectory::ConstPtr& msg)
@@ -313,7 +329,7 @@ void SplineTrajSampler::callbackWrapper(const kr_planning_msgs::SplineTrajectory
     traj_discretized.initial_omega = ini_w_msg;
     // ros::Duration(0.5).sleep(); // this is for yuwei's planner to finish so we have polytope info
     // ROS_ERROR("SLEEPING 0.5 sec to wait for polytope info");
-    this->pub_.publish(traj_discretized);
+    this->sampld_traj_pub_.publish(traj_discretized);
     // do optimization here if needed
     if (compute_altro_) publish_altro(pos, vel, acc, yaw_ref, thrust_ref, moment_ref, t, N_sample_pts, q_ref, w_ref, traj.header);
     N_iter_++;

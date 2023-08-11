@@ -140,7 +140,7 @@ class quadMPC {
 
     // Solve
     AltroOptions opts;
-    opts.verbose = Verbosity::Silent;
+    opts.verbose = Verbosity::LineSearch;
     opts.iterations_max = 20;
     opts.use_backtracking_linesearch = true;
     opts.use_quaternion = true;
