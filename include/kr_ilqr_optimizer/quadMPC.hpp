@@ -2,7 +2,7 @@
 #include "Eigen/Dense"
 #include "altro/altro.hpp"
 #include "fmt/core.h"
-#include "test_utils.hpp"
+#include "kr_ilqr_optimizer/test_utils.hpp"
 #include <chrono>
 #include <fstream>
 #include <filesystem>

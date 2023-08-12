@@ -3,14 +3,14 @@
 // Copyright (c) 2022 Robotic Exploration Lab. All rights reserved.
 //
 
-#include "test_utils.hpp"
+#include "kr_ilqr_optimizer/test_utils.hpp"
 
 #include <filesystem>
 #include <fstream>
 #include <string>
 #include <vector>
 #include <iostream>
-#include "finitediff.hpp"
+#include "kr_ilqr_optimizer/finitediff.hpp"
 
 
 namespace fs = std::filesystem;

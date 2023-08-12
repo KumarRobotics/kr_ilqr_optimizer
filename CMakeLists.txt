@@ -1,6 +1,7 @@
 cmake_minimum_required(VERSION 3.0.2)
 project(kr_ilqr_optimizer)
 
+
 ## Compile as C++11, supported in ROS Kinetic and newer
 add_compile_options(-std=c++17)
 
@@ -10,21 +11,26 @@ add_compile_options(-std=c++17)
 find_package(catkin REQUIRED COMPONENTS
   kr_planning_msgs
   roscpp
-  state_machine
   eigen_conversions
   visualization_msgs
+  altro
 )
+
+include(FetchContent)
+
+FetchContent_Declare(fmt
+  GIT_REPOSITORY https://github.com/fmtlib/fmt
+  GIT_TAG a33701196adfad74917046096bf5a2aa0ab0bb50  # version 9.1.0
+  )
+
+FetchContent_MakeAvailable(fmt)
+list(POP_BACK CMAKE_MESSAGE_CONTEXT)
 
 
 ## System dependencies are found with CMake's conventions
 # find_package(Boost REQUIRED COMPONENTS system)
 find_package(Eigen3 3.4 REQUIRED) # for ilqr stuff
-
-# altro
-set(CMAKE_PREFIX_PATH /home/yifei/altro_install)
-find_package(altro 0.1 REQUIRED)
-find_package(fmt REQUIRED)
-
+# find_package(fmt REQUIRED) # for ilqr stuff
 
 ## Uncomment this if the package has a setup.py. This macro ensures
 ## modules and global scripts declared therein get installed
@@ -112,10 +118,10 @@ find_package(fmt REQUIRED)
 ## CATKIN_DEPENDS: catkin_packages dependent projects also need
 ## DEPENDS: system dependencies of this project that dependent projects also need
 catkin_package(
- INCLUDE_DIRS include
+ INCLUDE_DIRS include 
  LIBRARIES kr_ilqr_optimizer
- CATKIN_DEPENDS kr_planning_msgs roscpp visualization_msgs state_machine
- DEPENDS system_lib
+ CATKIN_DEPENDS kr_planning_msgs roscpp visualization_msgs altro
+ DEPENDS # we should put fmt and eigen here
 )
 
 ###########
@@ -140,15 +146,15 @@ add_library(finitediff
 ) 
 
 target_link_libraries(altro_test_utils
-  PUBLIC
-  altro::altro
-  fmt::fmt
-  Eigen3::Eigen
+  ${catkin_LIBRARIES}
   finitediff
+  Eigen3::Eigen
+  fmt::fmt
 )
 target_link_libraries(finitediff
-  PUBLIC
+${catkin_LIBRARIES}
   Eigen3::Eigen
+  fmt::fmt
   )
 target_compile_definitions(altro_test_utils
   PUBLIC
@@ -162,7 +168,7 @@ target_compile_definitions(altro_test_utils
 ## Declare a C++ executable
 ## With catkin_make all packages are built within a single CMake context
 ## The recommended prefix ensures that target names across packages don't collide
-add_executable(sampler_pub src/spline_trajectory_sampler.cpp)
+add_executable(sampler_pub include/kr_ilqr_optimizer/spline_trajectory_sampler.cpp)
 
 ## Rename C++ executable without prefix
 ## The above recommended prefix causes long target names, the following renames the
@@ -175,8 +181,16 @@ add_executable(sampler_pub src/spline_trajectory_sampler.cpp)
 # add_dependencies(${PROJECT_NAME}_node ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 
 ## Specify libraries to link a library or executable target against
-target_link_libraries(sampler_pub PUBLIC ${catkin_LIBRARIES} Eigen3::Eigen)
-target_link_libraries(sampler_pub PRIVATE altro::altro fmt::fmt altro_test_utils)
+target_link_libraries(sampler_pub PUBLIC ${catkin_LIBRARIES} Eigen3::Eigen fmt::fmt)
+target_link_libraries(sampler_pub PRIVATE altro_test_utils)
+
+add_library(kr_ilqr_optimizer include/kr_ilqr_optimizer/spline_trajectory_sampler.cpp)
+target_link_libraries(kr_ilqr_optimizer PUBLIC ${catkin_LIBRARIES} Eigen3::Eigen fmt::fmt)
+target_link_libraries(kr_ilqr_optimizer PRIVATE altro_test_utils)
+add_dependencies(kr_ilqr_optimizer
+  ${${PROJECT_NAME}_EXPORTED_TARGETS} 
+  ${catkin_EXPORTED_TARGETS}
+  )
 
 #############
 ## Install ##

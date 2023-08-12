@@ -19,9 +19,9 @@
 
 #include <sstream>
 #include "altro/altro.hpp"
-#include "test_utils.hpp"
-#include "finitediff.hpp"
-#include "quadMPC.hpp"
+#include "kr_ilqr_optimizer/test_utils.hpp"
+#include "kr_ilqr_optimizer/finitediff.hpp"
+#include "kr_ilqr_optimizer/quadMPC.hpp"
 using Vector = Eigen::Matrix<a_float, Eigen::Dynamic, 1>;
 
 class SplineTrajSampler

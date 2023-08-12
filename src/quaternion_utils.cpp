@@ -3,7 +3,7 @@
 // Copyright (c) 2022 Robotic Exploration Lab. All rights reserved.
 //
 
-#include "quaternion_utils.hpp"
+#include "kr_ilqr_optimizer/quaternion_utils.hpp"
 #include <iostream>
 
 namespace altro {
