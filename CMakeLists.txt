@@ -1,9 +1,9 @@
-cmake_minimum_required(VERSION 3.0.2)
+cmake_minimum_required(VERSION 3.10)
 project(kr_ilqr_optimizer)
 
 
 ## Compile as C++11, supported in ROS Kinetic and newer
-add_compile_options(-std=c++17)
+set(CMAKE_CXX_STANDARD 17)
 
 ## Find catkin macros and libraries
 ## if COMPONENTS list like find_package(catkin REQUIRED COMPONENTS xyz)
@@ -24,7 +24,6 @@ FetchContent_Declare(fmt
   )
 
 FetchContent_MakeAvailable(fmt)
-list(POP_BACK CMAKE_MESSAGE_CONTEXT)
 
 
 ## System dependencies are found with CMake's conventions
@@ -140,19 +139,21 @@ include_directories(
 add_library(altro_test_utils
   src/test_utils.cpp
 )
-
-add_library(finitediff 
-  src/finitediff.cpp
-) 
-
 target_link_libraries(altro_test_utils
+  PUBLIC
   ${catkin_LIBRARIES}
   finitediff
   Eigen3::Eigen
   fmt::fmt
 )
+
+add_library(finitediff 
+  src/finitediff.cpp
+) 
+
 target_link_libraries(finitediff
-${catkin_LIBRARIES}
+  PUBLIC
+  ${catkin_LIBRARIES}
   Eigen3::Eigen
   fmt::fmt
   )
@@ -183,14 +184,12 @@ add_executable(sampler_pub include/kr_ilqr_optimizer/spline_trajectory_sampler.c
 ## Specify libraries to link a library or executable target against
 target_link_libraries(sampler_pub PUBLIC ${catkin_LIBRARIES} Eigen3::Eigen fmt::fmt)
 target_link_libraries(sampler_pub PRIVATE altro_test_utils)
+add_dependencies(sampler_pub ${${PROJECT_NAME}_EXPORTED_TARGETS}
+                 ${catkin_EXPORTED_TARGETS})
 
-add_library(kr_ilqr_optimizer include/kr_ilqr_optimizer/spline_trajectory_sampler.cpp)
-target_link_libraries(kr_ilqr_optimizer PUBLIC ${catkin_LIBRARIES} Eigen3::Eigen fmt::fmt)
-target_link_libraries(kr_ilqr_optimizer PRIVATE altro_test_utils)
-add_dependencies(kr_ilqr_optimizer
-  ${${PROJECT_NAME}_EXPORTED_TARGETS} 
-  ${catkin_EXPORTED_TARGETS}
-  )
+# add_library(kr_ilqr_optimizer include/kr_ilqr_optimizer/spline_trajectory_sampler.cpp)
+# target_link_libraries(kr_ilqr_optimizer PUBLIC ${catkin_LIBRARIES} Eigen3::Eigen fmt::fmt)
+# target_link_libraries(kr_ilqr_optimizer PRIVATE altro_test_utils)
 
 #############
 ## Install ##
