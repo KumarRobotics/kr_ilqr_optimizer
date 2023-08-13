@@ -28,9 +28,12 @@ class SplineTrajSampler
   int N_sample_pts_ = 80;
   double time_limit_ = 8;
 
-  std::unique_ptr<quadMPC> mpc_solver;
   bool compute_altro_ = true;
   bool write_summary_to_file_ = false;
+  bool subscribe_to_traj_ = true;
+  bool publish_optimized_traj_ = true;
+  bool publish_viz_ = true;
+
   uint N_iter_ = 0;
   std::ofstream poly_array_file;
   
@@ -43,17 +46,28 @@ class SplineTrajSampler
   Eigen::DiagonalMatrix<double, 3> inertia_ = Eigen::DiagonalMatrix<double, 3> (0.0023, 0.0023, 0.004);
 
   public:
+    std::unique_ptr<quadMPC> mpc_solver;
+
     using Ptr = std::unique_ptr<SplineTrajSampler>;
 
-  SplineTrajSampler(){
+  SplineTrajSampler(bool subscribe_to_traj_, bool publish_optimized_traj_, bool publish_viz_): 
+  subscribe_to_traj_(subscribe_to_traj_), publish_optimized_traj_(publish_optimized_traj_), publish_viz_(publish_viz_){
     bool use_quat = false;
     mpc_solver = std::make_unique<quadMPC>(N_sample_pts_, time_limit_, use_quat);
     ros::NodeHandle n;
+    if (publish_optimized_traj_){
+      opt_traj_pub_ = n.advertise<kr_planning_msgs::TrajectoryDiscretized>("optimized_traj_samples", 1);
+    }
+    if (publish_viz_){
+      opt_viz_pub_ = n.advertise<visualization_msgs::Marker>("optimized_traj_samples_viz", 1);
+    }
+    if(subscribe_to_traj_){
+      sub_ = n.subscribe("/local_plan_server/trajectory_planner/search_trajectory", 1, &SplineTrajSampler::callbackWrapper, this);
+    }
     sampld_traj_pub_ = n.advertise<kr_planning_msgs::TrajectoryDiscretized>("spline_traj_samples", 1);
-    opt_traj_pub_ = n.advertise<kr_planning_msgs::TrajectoryDiscretized>("optimized_traj_samples", 1);
-    opt_viz_pub_ = n.advertise<visualization_msgs::Marker>("optimized_traj_samples_viz", 1);
-    // sub_ = n.subscribe("/local_plan_server/trajectory", 1, &SplineTrajSampler::callbackWrapper, this);
-    sub_ = n.subscribe("/local_plan_server/trajectory_planner/search_trajectory", 1, &SplineTrajSampler::callbackWrapper, this);
+    // opt_traj_pub_ = n.advertise<kr_planning_msgs::TrajectoryDiscretized>("optimized_traj_samples", 1);
+    // opt_viz_pub_ = n.advertise<visualization_msgs::Marker>("optimized_traj_samples_viz", 1);
+    // sub_ = n.subscribe("/local_plan_server/trajectory_planner/search_trajectory", 1, &SplineTrajSampler::callbackWrapper, this);
     if (write_summary_to_file_){
       poly_array_file.open("/home/yifei/planning_summary.csv",std::ios_base::app);
       poly_array_file << "Planning Iteration, Starting x, Jerk Norm Sum, Traj Time, Total_Ref_Fdt, Total_Ref_Mdt \n";
@@ -61,9 +75,10 @@ class SplineTrajSampler
     mpc_solver->SetUp();
   
   }
-  void callbackWrapper(const kr_planning_msgs::SplineTrajectory::ConstPtr& msg);
+void callbackWrapper(const kr_planning_msgs::SplineTrajectory::ConstPtr& msg);
 
-  
+kr_planning_msgs::TrajectoryDiscretized sample_and_refine_trajectory(const kr_planning_msgs::SplineTrajectory::ConstPtr & msg);
+
 
   private:
 

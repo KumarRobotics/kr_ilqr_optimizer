@@ -1,7 +1,9 @@
 #include "kr_ilqr_optimizer/spline_trajectory_sampler.hpp"
+
 #include "altro/altro.hpp"
-#include "kr_ilqr_optimizer/test_utils.hpp"
 #include "kr_ilqr_optimizer/finitediff.hpp"
+#include "kr_ilqr_optimizer/test_utils.hpp"
+// #include "spline_trajectory_sampler.hpp"
 using Vector = Eigen::Matrix<a_float, Eigen::Dynamic, 1>;
 
 Eigen::Vector3d SplineTrajSampler::compute_ref_inputs(Eigen::Vector3d pos, Eigen::Vector3d vel, Eigen::Vector3d acc, Eigen::Vector3d jerk, Eigen::Vector3d snap, 
@@ -96,13 +98,14 @@ void SplineTrajSampler::publish_altro(std::vector<Eigen::Vector3d> pos, std::vec
 
     }
     //DEAL WITH VIZ
-    opt_viz_pub_.publish(viz_msg);
+    if (publish_viz_) opt_viz_pub_.publish(viz_msg);
     //DEAL WITH Actual MSG
-    opt_traj_pub_.publish(traj);
+    if (publish_optimized_traj_) opt_traj_pub_.publish(traj);
   }
 
-void SplineTrajSampler::callbackWrapper(const kr_planning_msgs::SplineTrajectory::ConstPtr& msg) {
-  kr_planning_msgs::SplineTrajectory traj= *msg;
+//move sampler function as a seperate thing
+kr_planning_msgs::TrajectoryDiscretized SplineTrajSampler::sample_and_refine_trajectory(const kr_planning_msgs::SplineTrajectory::ConstPtr& msg){
+  kr_planning_msgs::SplineTrajectory traj = *msg;
   // double total_time = traj.data[0].t_total;
   double total_time = time_limit_; 
   std::vector<Eigen::Vector3d> pos = sample(traj, N_sample_pts_, 0);
@@ -181,7 +184,9 @@ void SplineTrajSampler::callbackWrapper(const kr_planning_msgs::SplineTrajectory
   }
   if (write_summary_to_file_){
     //get start location as key to which ones successed
-    poly_array_file << std::to_string(N_iter_)+ ", " + std::to_string(pos[0](0)) + ", " + std::to_string(jerk_abs_sum) + ", " + std::to_string(total_time) +"," + std::to_string(total_ref_F)+","+std::to_string(total_ref_M)+"\n";
+    poly_array_file << std::to_string(N_iter_)+ ", " + std::to_string(pos[0](0)) + ", " 
+    + std::to_string(jerk_abs_sum) + ", " + std::to_string(total_time) +"," 
+    + std::to_string(total_ref_F)+","+std::to_string(total_ref_M)+"\n";
     //compute the total snap at 100 points
   }
 
@@ -190,11 +195,20 @@ void SplineTrajSampler::callbackWrapper(const kr_planning_msgs::SplineTrajectory
   traj_discretized.N = N_sample_pts_;
   traj_discretized.inital_attitude = ini_q_msg;
   traj_discretized.initial_omega = ini_w_msg;
+
+  if (compute_altro_) publish_altro(pos, vel, acc, yaw_ref, thrust_ref, moment_ref, t, N_sample_pts_, q_ref, w_ref, traj.header);
+
+
+  return traj_discretized;
+}
+
+void SplineTrajSampler::callbackWrapper(const kr_planning_msgs::SplineTrajectory::ConstPtr& msg) {
+  kr_planning_msgs::TrajectoryDiscretized traj_discretized = sample_and_refine_trajectory(msg);
+  
   // ros::Duration(0.5).sleep(); // this is for yuwei's planner to finish so we have polytope info
   // ROS_ERROR("SLEEPING 0.5 sec to wait for polytope info");
   this->sampld_traj_pub_.publish(traj_discretized);
   // do optimization here if needed
-  if (compute_altro_) publish_altro(pos, vel, acc, yaw_ref, thrust_ref, moment_ref, t, N_sample_pts_, q_ref, w_ref, traj.header);
   N_iter_++;
 }
 

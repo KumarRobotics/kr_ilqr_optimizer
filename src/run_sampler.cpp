@@ -1,5 +1,6 @@
 #include "ros/ros.h"
 #include "kr_ilqr_optimizer/spline_trajectory_sampler.hpp"
+#include <iostream>
 int main(int argc, char **argv)
 {
   /**
@@ -21,7 +22,9 @@ int main(int argc, char **argv)
    */
 
   // std::shared_ptr<SplineTrajectoryVisual> visual_;
-  SplineTrajSampler sampler;
+  SplineTrajSampler sampler(true, true, true);
+  // sampler.mpc_solver->SetUp();
+  std::cout << "sampler setup Complete" << std::endl;
   ros::spin();
   return 0;
 }

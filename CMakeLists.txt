@@ -42,24 +42,34 @@ include_directories(
   ${catkin_INCLUDE_DIRS}
 )
 
-## Declare a C++ library
-add_library(altro_test_utils
-  src/test_utils.cpp
-)
+add_library(quaternion_utils src/quaternion_utils.cpp)
+target_link_libraries(quaternion_utils
+  PUBLIC
+  Eigen3::Eigen
+  )
+
 add_library(finitediff 
   src/finitediff.cpp
 ) 
-target_link_libraries(altro_test_utils
-  PUBLIC
-  ${catkin_LIBRARIES}
-  finitediff
-  Eigen3::Eigen
-)
-
 target_link_libraries(finitediff
   PUBLIC
-  ${catkin_LIBRARIES}
   Eigen3::Eigen
+  )
+
+add_library(altro_test_utils src/test_utils.cpp)
+target_link_libraries(altro_test_utils
+  PUBLIC
+  finitediff
+  quaternion_utils
+  ${catkin_LIBRARIES}
+)
+## Declare a C++ library
+add_library(quad_mpc include/kr_ilqr_optimizer/quadMPC.hpp)
+set_target_properties(quad_mpc PROPERTIES LINKER_LANGUAGE CXX)
+
+target_link_libraries(quad_mpc
+  PUBLIC
+  altro_test_utils
   )
 target_compile_definitions(altro_test_utils
   PUBLIC
@@ -85,11 +95,11 @@ target_compile_definitions(altro_test_utils
 # add_dependencies(${PROJECT_NAME}_node ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 add_library(kr_ilqr_optimizer src/spline_trajectory_sampler.cpp)
 target_link_libraries(kr_ilqr_optimizer 
-      PUBLIC ${catkin_LIBRARIES} Eigen3::Eigen altro_test_utils)
+      PUBLIC quad_mpc)
 ## Specify libraries to link a library or executable target against
 add_executable(sampler_pub src/run_sampler.cpp)
 target_link_libraries(sampler_pub 
-  PUBLIC ${catkin_LIBRARIES}  Eigen3::Eigen altro_test_utils kr_ilqr_optimizer )
+  PUBLIC  kr_ilqr_optimizer)
 # 
 
 
