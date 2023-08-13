@@ -1,7 +1,6 @@
 
 #include "Eigen/Dense"
 #include "altro/altro.hpp"
-#include "fmt/core.h"
 #include "kr_ilqr_optimizer/test_utils.hpp"
 #include <chrono>
 #include <fstream>
@@ -86,7 +85,6 @@ class quadMPC {
     printf("h = %f\n", h);
     err = solver.SetTimeStep(h);
 
-    fmt::print("Set TimeStep Finished!\n");
 
     Eigen::Matrix<double,13,1> xf;
     xf << 0.,0.,0., 1.0, 0.0, 0.0, 0.0,  0,0,0, 0,0,0;
@@ -137,8 +135,8 @@ class quadMPC {
 
     // Initialize Solver
     err = solver.Initialize();
-    fmt::print("Solver Initialized!\n");
-
+    std::cout<<"Solver Initialized!\n"<<std::endl;
+    
     // Solve
     AltroOptions opts;
     opts.verbose = Verbosity::Silent;
