@@ -26,7 +26,7 @@ find_package(Eigen3 3.4 REQUIRED) # for ilqr stuff
 
 catkin_package(
  INCLUDE_DIRS include ${catkin_INCLUDE_DIRS}
- LIBRARIES kr_ilqr_optimizer
+ LIBRARIES kr_ilqr_optimizer altro_test_utils
  CATKIN_DEPENDS kr_planning_msgs roscpp visualization_msgs altro
  DEPENDS # we should put fmt and eigen here
 )
@@ -43,35 +43,14 @@ include_directories(
   ${catkin_INCLUDE_DIRS}
 )
 
-add_library(quaternion_utils src/quaternion_utils.cpp)
-target_link_libraries(quaternion_utils
-  PUBLIC
-  Eigen3::Eigen
-  )
 
-add_library(finitediff 
-  src/finitediff.cpp
-) 
-target_link_libraries(finitediff
-  PUBLIC
-  Eigen3::Eigen
-  )
-
-add_library(altro_test_utils src/test_utils.cpp)
+add_library(altro_test_utils src/test_utils.cpp src/finitediff.cpp src/quaternion_utils.cpp)
 target_link_libraries(altro_test_utils
   PUBLIC
-  finitediff
-  quaternion_utils
   ${catkin_LIBRARIES}
+  Eigen3::Eigen
 )
-## Declare a C++ library
-add_library(quad_mpc include/kr_ilqr_optimizer/quadMPC.hpp)
-set_target_properties(quad_mpc PROPERTIES LINKER_LANGUAGE CXX)
 
-target_link_libraries(quad_mpc
-  PUBLIC
-  altro_test_utils
-  )
 target_compile_definitions(altro_test_utils
   PUBLIC
   ALTRO_TEST_DIR="/home/yifei/Documents/optimal_ctrl/altro/test"
@@ -95,8 +74,7 @@ target_compile_definitions(altro_test_utils
 ## same as for the library above
 # add_dependencies(${PROJECT_NAME}_node ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 add_library(kr_ilqr_optimizer src/spline_trajectory_sampler.cpp)
-target_link_libraries(kr_ilqr_optimizer 
-      PUBLIC quad_mpc)
+target_link_libraries(kr_ilqr_optimizer PUBLIC altro_test_utils)
 ## Specify libraries to link a library or executable target against
 add_executable(sampler_pub src/run_sampler.cpp)
 target_link_libraries(sampler_pub 
