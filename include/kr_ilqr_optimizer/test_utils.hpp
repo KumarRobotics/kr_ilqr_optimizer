@@ -8,7 +8,7 @@
 #include <vector>
 
 #include "Eigen/Dense"
-#include "altro/solver/typedefs.hpp"
+#include "altro/typedefs.hpp"
 #include "kr_ilqr_optimizer/quaternion_utils.hpp"
 
 void discrete_double_integrator_dynamics(double *xnext, const double *x, const double *u, float h,

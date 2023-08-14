@@ -4,6 +4,8 @@ project(kr_ilqr_optimizer)
 
 ## Compile as C++11, supported in ROS Kinetic and newer
 set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+
 
 ## Find catkin macros and libraries
 ## if COMPONENTS list like find_package(catkin REQUIRED COMPONENTS xyz)
@@ -21,7 +23,6 @@ find_package(catkin REQUIRED COMPONENTS
 ## System dependencies are found with CMake's conventions
 # find_package(Boost REQUIRED COMPONENTS system)
 find_package(Eigen3 3.4 REQUIRED) # for ilqr stuff
-# find_package(fmt REQUIRED) # for ilqr stuff
 
 catkin_package(
  INCLUDE_DIRS include ${catkin_INCLUDE_DIRS}
@@ -99,7 +100,7 @@ target_link_libraries(kr_ilqr_optimizer
 ## Specify libraries to link a library or executable target against
 add_executable(sampler_pub src/run_sampler.cpp)
 target_link_libraries(sampler_pub 
-  PUBLIC  kr_ilqr_optimizer)
+  PUBLIC  kr_ilqr_optimizer) # WHY DOES IT NEED FMT!!!
 # 
 
 
