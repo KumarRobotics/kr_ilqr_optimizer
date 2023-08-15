@@ -12,14 +12,13 @@
 #include <iostream>
 #include <fstream>
 
-#include "ros/ros.h"
 #include <std_msgs/Float64.h>
 #include <std_msgs/Int32.h>
 #include <std_msgs/Header.h>
 #include <std_msgs/ColorRGBA.h>
 
 #include <sstream>
-#include "kr_ilqr_optimizer/quadMPC.hpp"
+#include <kr_ilqr_optimizer/quadMPC.hpp>
 
 
 class SplineTrajSampler
@@ -38,7 +37,7 @@ class SplineTrajSampler
   std::ofstream poly_array_file;
   
   ros::Subscriber sub_;
-  ros::Publisher sampld_traj_pub_;
+  ros::Publisher sampled_traj_pub_;
   ros::Publisher opt_traj_pub_;
   ros::Publisher opt_viz_pub_;
   double g_ = 9.81;
@@ -50,8 +49,8 @@ class SplineTrajSampler
 
     using Ptr = std::unique_ptr<SplineTrajSampler>;
 
-  SplineTrajSampler(bool subscribe_to_traj_, bool publish_optimized_traj_, bool publish_viz_): 
-  subscribe_to_traj_(subscribe_to_traj_), publish_optimized_traj_(publish_optimized_traj_), publish_viz_(publish_viz_){
+  SplineTrajSampler(bool subscribe_to_traj_, bool publish_optimized_traj_, bool publish_viz_, int N_sample_pts_, double time_limit_): 
+  subscribe_to_traj_(subscribe_to_traj_), publish_optimized_traj_(publish_optimized_traj_), publish_viz_(publish_viz_), N_sample_pts_(N_sample_pts_), time_limit_(time_limit_){
     bool use_quat = false;
     mpc_solver = std::make_unique<quadMPC>(N_sample_pts_, time_limit_, use_quat);
     ros::NodeHandle n;
@@ -64,7 +63,7 @@ class SplineTrajSampler
     if(subscribe_to_traj_){
       sub_ = n.subscribe("/local_plan_server/trajectory_planner/search_trajectory", 1, &SplineTrajSampler::callbackWrapper, this);
     }
-    sampld_traj_pub_ = n.advertise<kr_planning_msgs::TrajectoryDiscretized>("spline_traj_samples", 1);
+    sampled_traj_pub_ = n.advertise<kr_planning_msgs::TrajectoryDiscretized>("spline_traj_samples", 1);
     // opt_traj_pub_ = n.advertise<kr_planning_msgs::TrajectoryDiscretized>("optimized_traj_samples", 1);
     // opt_viz_pub_ = n.advertise<visualization_msgs::Marker>("optimized_traj_samples_viz", 1);
     // sub_ = n.subscribe("/local_plan_server/trajectory_planner/search_trajectory", 1, &SplineTrajSampler::callbackWrapper, this);
@@ -77,12 +76,12 @@ class SplineTrajSampler
   }
 void callbackWrapper(const kr_planning_msgs::SplineTrajectory::ConstPtr& msg);
 
-kr_planning_msgs::TrajectoryDiscretized sample_and_refine_trajectory(const kr_planning_msgs::SplineTrajectory::ConstPtr & msg);
+kr_planning_msgs::TrajectoryDiscretized sample_and_refine_trajectory(const kr_planning_msgs::SplineTrajectory & traj);
 
 
   private:
 
-  void publish_altro(std::vector<Eigen::Vector3d> pos, std::vector<Eigen::Vector3d> vel, std::vector<Eigen::Vector3d> acc, std::vector<double> yaw_ref,
+  kr_planning_msgs::TrajectoryDiscretized publish_altro(std::vector<Eigen::Vector3d> pos, std::vector<Eigen::Vector3d> vel, std::vector<Eigen::Vector3d> acc, std::vector<double> yaw_ref,
                                 std::vector<double> thrust, std::vector<Eigen::Vector3d> moment, std::vector<double> t, int N, std::vector<Eigen::Quaterniond> q_ref, std::vector<Eigen::Vector3d> w_ref, std_msgs::Header header);
   Eigen::Vector3d compute_ref_inputs(Eigen::Vector3d pos, Eigen::Vector3d vel, Eigen::Vector3d acc, Eigen::Vector3d jerk, Eigen::Vector3d snap, 
         Eigen::Vector3d yaw_dyaw_ddyaw, double& thrust, geometry_msgs::Point& moment, Eigen::Quaterniond& q_return, Eigen::Vector3d& initial_w);
@@ -126,7 +125,7 @@ kr_planning_msgs::TrajectoryDiscretized sample_and_refine_trajectory(const kr_pl
 
       for (int dim = 0; dim < msg.dimensions; dim++) {
         auto spline = msg.data[dim];
-        double dt = 0;
+        double time_elapsed = 0;
         for (auto poly : spline.segs) {
           auto poly_coeffs = poly.coeffs;
           for (int d = 0; d < deriv_num; d++) {
@@ -134,13 +133,13 @@ kr_planning_msgs::TrajectoryDiscretized sample_and_refine_trajectory(const kr_pl
           }
           result(dim) = poly_coeffs[0];
 
-          if (t < dt + poly.dt || poly == spline.segs.back()) {
+          if (t < time_elapsed + poly.dt || poly == spline.segs.back()) {
             for (int j = 1; j < poly_coeffs.size(); j++) {
-              result(dim) += poly_coeffs[j] * std::pow((t - dt) / poly.dt, j);
+              result(dim) += poly_coeffs[j] * std::pow((t - time_elapsed) / poly.dt, j);
             }
             break;
           }
-          dt += poly.dt;
+          time_elapsed += poly.dt;
         }
       }
       return result;

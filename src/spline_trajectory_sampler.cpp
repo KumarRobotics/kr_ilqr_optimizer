@@ -55,12 +55,13 @@ Eigen::Vector3d SplineTrajSampler::compute_ref_inputs(Eigen::Vector3d pos, Eigen
     return u2;
   }
 
-void SplineTrajSampler::publish_altro(std::vector<Eigen::Vector3d> pos, std::vector<Eigen::Vector3d> vel, std::vector<Eigen::Vector3d> acc, std::vector<double> yaw_ref,
+kr_planning_msgs::TrajectoryDiscretized SplineTrajSampler::publish_altro(std::vector<Eigen::Vector3d> pos, std::vector<Eigen::Vector3d> vel, std::vector<Eigen::Vector3d> acc, std::vector<double> yaw_ref,
                                 std::vector<double> thrust, std::vector<Eigen::Vector3d> moment, std::vector<double> t, int N, std::vector<Eigen::Quaterniond> q_ref, std::vector<Eigen::Vector3d> w_ref, std_msgs::Header header){
     std::vector<Vector> X_sim;
     std::vector<Vector> U_sim;
     std::vector<double> t_sim;
-    mpc_solver->solve_problem(pos, vel, acc, yaw_ref, thrust, moment, t, N, q_ref, w_ref, X_sim, U_sim, t_sim);
+    ROS_WARN("[iLQR Optimizer]: Solving");
+    uint solver_status = mpc_solver->solve_problem(pos, vel, acc, yaw_ref, thrust, moment, t, N, q_ref, w_ref, X_sim, U_sim, t_sim);
     //DEAL WITH VIZ
     visualization_msgs::Marker viz_msg;
     viz_msg.type = 4;
@@ -101,11 +102,17 @@ void SplineTrajSampler::publish_altro(std::vector<Eigen::Vector3d> pos, std::vec
     if (publish_viz_) opt_viz_pub_.publish(viz_msg);
     //DEAL WITH Actual MSG
     if (publish_optimized_traj_) opt_traj_pub_.publish(traj);
+
+    if (solver_status == 0) return traj;
+    else return kr_planning_msgs::TrajectoryDiscretized();
   }
 
-//move sampler function as a seperate thing
-kr_planning_msgs::TrajectoryDiscretized SplineTrajSampler::sample_and_refine_trajectory(const kr_planning_msgs::SplineTrajectory::ConstPtr& msg){
-  kr_planning_msgs::SplineTrajectory traj = *msg;
+//if compute altro is on, then we will compute altro, otherwise we will just publish the discretized traj from passed in
+kr_planning_msgs::TrajectoryDiscretized SplineTrajSampler::sample_and_refine_trajectory(const kr_planning_msgs::SplineTrajectory& traj){
+  ROS_WARN("[iLQR]: Sampling Started");
+
+  ROS_WARN("[iLQR]: MSG Converted");
+
   // double total_time = traj.data[0].t_total;
   double total_time = time_limit_; 
   std::vector<Eigen::Vector3d> pos = sample(traj, N_sample_pts_, 0);
@@ -114,6 +121,8 @@ kr_planning_msgs::TrajectoryDiscretized SplineTrajSampler::sample_and_refine_tra
   std::vector<Eigen::Vector3d> jerk = sample(traj, N_sample_pts_, 3);
   std::vector<Eigen::Vector3d> snap = sample(traj, N_sample_pts_, 4);
   double dt = total_time/N_sample_pts_;
+  ROS_WARN("[iLQR]: Sample Done");
+
 
   kr_planning_msgs::TrajectoryDiscretized traj_discretized; 
   traj_discretized.header = traj.header;
@@ -196,18 +205,22 @@ kr_planning_msgs::TrajectoryDiscretized SplineTrajSampler::sample_and_refine_tra
   traj_discretized.inital_attitude = ini_q_msg;
   traj_discretized.initial_omega = ini_w_msg;
 
-  if (compute_altro_) publish_altro(pos, vel, acc, yaw_ref, thrust_ref, moment_ref, t, N_sample_pts_, q_ref, w_ref, traj.header);
+  ROS_WARN("[iLQR]: Sampling Finished");
 
+  if (compute_altro_) traj_discretized = publish_altro(pos, vel, acc, yaw_ref, thrust_ref, moment_ref, t, N_sample_pts_, q_ref, w_ref, traj.header);
 
+  ROS_WARN("[iLQR]: Altro Finished");
   return traj_discretized;
 }
 
 void SplineTrajSampler::callbackWrapper(const kr_planning_msgs::SplineTrajectory::ConstPtr& msg) {
-  kr_planning_msgs::TrajectoryDiscretized traj_discretized = sample_and_refine_trajectory(msg);
+  kr_planning_msgs::SplineTrajectory traj = *msg;
+
+  kr_planning_msgs::TrajectoryDiscretized traj_discretized = sample_and_refine_trajectory(traj);
   
   // ros::Duration(0.5).sleep(); // this is for yuwei's planner to finish so we have polytope info
   // ROS_ERROR("SLEEPING 0.5 sec to wait for polytope info");
-  this->sampld_traj_pub_.publish(traj_discretized);
+  this->sampled_traj_pub_.publish(traj_discretized);
   // do optimization here if needed
   N_iter_++;
 }

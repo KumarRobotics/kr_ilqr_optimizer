@@ -1,4 +1,4 @@
-
+#include <ros/ros.h>
 #include "Eigen/Dense"
 #include "altro/altro.hpp"
 #include "kr_ilqr_optimizer/test_utils.hpp"
@@ -169,7 +169,7 @@ class quadMPC {
     Eigen::Vector4d u_ref_single;
 
   public:
-    void solve_problem(std::vector<Eigen::Vector3d> pos, std::vector<Eigen::Vector3d> vel, std::vector<Eigen::Vector3d> acc, std::vector<double> yaw_ref,
+    uint solve_problem(std::vector<Eigen::Vector3d> pos, std::vector<Eigen::Vector3d> vel, std::vector<Eigen::Vector3d> acc, std::vector<double> yaw_ref,
                                 std::vector<double> thrust, std::vector<Eigen::Vector3d> moment, std::vector<double> t, int N_input,  std::vector<Eigen::Quaterniond> q_ref, std::vector<Eigen::Vector3d> w_ref,
                                 std::vector<Vector> & X_sim, std::vector<Vector> & U_sim, std::vector<double> & t_sim){
       (void) t;
@@ -231,7 +231,7 @@ class quadMPC {
       
       SolveStatus status = solver.Solve();
 
-      std::cout << "Solve status is: " << static_cast<unsigned int>(status) << std::endl; 
+      std::cout << "Solve status is: " << static_cast<uint>(status) << std::endl; 
       cost_initial = solver.CalcCost();
       // fmt::print("Final cost = {}\n", cost_initial);
       
@@ -253,6 +253,7 @@ class quadMPC {
       }
       // ROS_ERROR("SHUTTING DOWN SINGLE TEST");
       // ros::shutdown();
+      return static_cast<uint>(status);
     }
    
     

@@ -22,7 +22,7 @@ int main(int argc, char **argv)
    */
 
   // std::shared_ptr<SplineTrajectoryVisual> visual_;
-  SplineTrajSampler sampler(true, true, true);
+  SplineTrajSampler sampler(true, true, true,40,8);
   // sampler.mpc_solver->SetUp();
   std::cout << "sampler setup Complete" << std::endl;
   ros::spin();
