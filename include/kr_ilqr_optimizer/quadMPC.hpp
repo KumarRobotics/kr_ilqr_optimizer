@@ -30,6 +30,51 @@ class quadMPC {
   void SetUp() {
     model_ptr = std::make_shared<const quadModel>();
     // Objective
+  }
+
+ protected:
+  std::shared_ptr<const quadModel> model_ptr;
+  int N;
+  double t_ref_;
+
+  const int n = quadModel::NumStates;
+  const int m = quadModel::NumInputs;
+  float h;
+
+  Vector Qd;
+  Vector Rd;
+  Vector Qdf;
+  bool use_quaternion;
+
+  ExplicitDynamicsFunction dyn;
+  ExplicitDynamicsJacobian jac;
+
+  ALTROSolver solver;
+
+  ErrorCodes err;
+  // Reference Trajectory (the "Scotty Dog")
+  std::vector<Eigen::Matrix<double, 13, 1>> x_ref;
+  std::vector<Eigen::Vector4d> u_ref;
+  Vector u0;
+  Eigen::Vector4d u_ref_single;
+
+ public:
+  uint solve_problem(
+      std::vector<Eigen::Vector3d> pos,
+      std::vector<Eigen::Vector3d> vel,
+      std::vector<Eigen::Vector3d> acc,
+      std::vector<double> yaw_ref,
+      std::vector<double> thrust,
+      std::vector<Eigen::Vector3d> moment,
+      double dt,
+      std::vector<Eigen::Quaterniond> q_ref,
+      std::vector<Eigen::Vector3d> w_ref,
+      const std::vector<std::pair<Eigen::MatrixXd, Eigen::VectorXd>>& h_polys,
+      const Eigen::VectorXd& allo_ts,
+      std::vector<Vector>& X_sim,
+      std::vector<Vector>& U_sim,
+      std::vector<double>& t_sim) {
+    solver = ALTROSolver(N);
     std::cout << "Size of Problem N = " << N << std::endl;
     Qd = Vector::Constant(n, 0);
     Rd = Vector::Constant(m, 0.1);
@@ -84,21 +129,44 @@ class quadMPC {
     printf("h = %f\n", h);
     err = solver.SetTimeStep(h);
 
-    Eigen::Matrix<double, 13, 1> xf;
-    xf << 0., 0., 0., 1.0, 0.0, 0.0, 0.0, 0, 0, 0, 0, 0, 0;
+    const int n_const = 13;
+
+    Eigen::Matrix<double, n_const, 1> x0;
+    // x0 << 2.0, 1.0, -1.0,   -0.752,  0.443,  0.443, -0.206,  0.5,-0.5,1.0,
+    // 0.8,0.8,0.8;
+    q_ref[0].normalize();
+    x0 << pos[0], q_ref[0].w(), q_ref[0].vec(), vel[0], w_ref[0];
+    // x0 << 2.0, 1.0, -1.0,  1.0,  0,   0, 0,  0.5,-0.5,0, 0.,0.,0.;
+
+    Eigen::Matrix<double, n_const, 1> xf;
+    xf << pos.back(), 1.0, 0.0, 0.0, 0.0, 0, 0, 0, 0, 0, 0;
+
     for (int k = 0; k <= N - 1; ++k) {
+      Eigen::Matrix<double, 13, 1> x_ref_k;
+      // std::cout<< "ref k = " << k << std::endl;
+      // std::cout<< "pos[k] = " << pos[k] << std::endl;
+      // std::cout<< "q_ref[k] = " << q_ref[k][1] << std::endl;
+
+      x_ref_k << pos[k], q_ref[k].w(), q_ref[k].vec(), vel[k], w_ref[k];
       // std::cout << k << std::endl;
+      //
+
       if (use_quaternion) {
-        err = solver.SetQuaternionCost(
-            n, m, Qd.data(), Rd.data(), 1.0, xf.data(), u_ref_single.data(), k);
+        err = solver.SetQuaternionCost(n,
+                                       m,
+                                       Qd.data(),
+                                       Rd.data(),
+                                       1.0,
+                                       x_ref_k.data(),
+                                       u_ref_single.data(),
+                                       k);
       } else {
         err = solver.SetLQRCost(
-            n, m, Qd.data(), Rd.data(), xf.data(), u_ref_single.data(), k);
+            n, m, Qd.data(), Rd.data(), x_ref_k.data(), u_ref_single.data(), k);
       }
+      // PrintErrorCode(err);
       // fmt::print("Print error\n");
     }
-    // err = solver.SetLQRCost(n, m, Qdf.data(), Rd.data(), xf.data(),
-    // u_ref_single.data(), N);
     if (use_quaternion) {
       err = solver.SetQuaternionCost(
           n, m, Qdf.data(), Rd.data(), 1.0, xf.data(), u_ref_single.data(), N);
@@ -106,66 +174,15 @@ class quadMPC {
       err = solver.SetLQRCost(
           n, m, Qdf.data(), Rd.data(), xf.data(), u_ref_single.data(), N);
     }
-    // err = solver.SetQuaternionCost(n, m, Qdf.data(), Rd.data(), 1.0,
-    // xf.data(), u_ref_single.data(),N);
-    err = solver.SetInitialState(xf.data(), n);
+    //
 
-    // Initialize Solver
-    err = solver.Initialize();
-    std::cout << "Solver Initialized!\n" << std::endl;
+    // // Initialize Solver
+    // err = solver.Initialize();
+    // std::cout << "Solver Initialized!\n" << std::endl;
 
     // Solve
-    AltroOptions opts;
-    opts.verbose = Verbosity::Silent;
-    opts.iterations_max = 40;
-    opts.use_backtracking_linesearch = true;
-    opts.quat_start_index = 3;  // THIS IS VERY IMPORTANT!
-    solver.SetOptions(opts);
-  }
 
- protected:
-  std::shared_ptr<const quadModel> model_ptr;
-  int N;
-  double t_ref_;
-
-  const int n = quadModel::NumStates;
-  const int m = quadModel::NumInputs;
-  float h;
-
-  Vector Qd;
-  Vector Rd;
-  Vector Qdf;
-  bool use_quaternion;
-
-  ExplicitDynamicsFunction dyn;
-  ExplicitDynamicsJacobian jac;
-
-  ALTROSolver solver;
-
-  ErrorCodes err;
-  // Reference Trajectory (the "Scotty Dog")
-  std::vector<Eigen::Matrix<double, 13, 1>> x_ref;
-  std::vector<Eigen::Vector4d> u_ref;
-  Vector u0;
-  Eigen::Vector4d u_ref_single;
-
- public:
-  uint solve_problem(
-      std::vector<Eigen::Vector3d> pos,
-      std::vector<Eigen::Vector3d> vel,
-      std::vector<Eigen::Vector3d> acc,
-      std::vector<double> yaw_ref,
-      std::vector<double> thrust,
-      std::vector<Eigen::Vector3d> moment,
-      double dt,
-      std::vector<Eigen::Quaterniond> q_ref,
-      std::vector<Eigen::Vector3d> w_ref,
-      const std::vector<std::pair<Eigen::MatrixXd, Eigen::VectorXd>>& h_polys,
-      const Eigen::VectorXd& allo_ts,
-      std::vector<Vector>& X_sim,
-      std::vector<Vector>& U_sim,
-      std::vector<double>& t_sim) {
-    err = solver.Deinitialize();
+    // err = solver.Deinitialize();
     // Constraints
     const a_float max_thrust = model_ptr->max_thrust_per_prop;
     const a_float min_thrust = model_ptr->min_thrust_per_prop;
@@ -204,63 +221,61 @@ class quadMPC {
                                0,
                                N + 1);
 
-    // int cur_poly_idx = 0;
-    std::cout << "allots= " << allo_ts << std::endl;
-    uint index_so_far = 0;
-    for (int k = 0; k < h_polys.size(); k++) {
-      auto h_poly = h_polys[k];
-      const int num_con = h_poly.second.cols();
-      auto poly_con = [h_poly, allo_ts](
-                          a_float* c, const a_float* x, const a_float* u) {
-        (void)u;
-        const int n_con = h_poly.second.cols();
-        Eigen::Map<const Vector> X(x, 13);
-        Eigen::Map<Vector> C(c, n_con);
-        C = h_poly.first * X.segment<3>(0) - h_poly.second;
-      };
-      auto poly_jac = [h_poly](
-                          a_float* jac, const a_float* x, const a_float* u) {
-        (void)u;
-        const int n_con = h_poly.second.cols();
-        Eigen::Map<Eigen::MatrixXd> J(jac, n_con, 17);
-        J.setZero();
-        J.block(0, 0, n_con, 3) = h_poly.first;
-      };
-      err = solver.SetConstraint(poly_con,
-                                 poly_jac,
-                                 num_con,
-                                 ConstraintType::INEQUALITY,
-                                 "polytope",
-                                 index_so_far,
-                                 index_so_far + int(allo_ts[k] / dt) - 1);
-      std::cout << "k= " << k << " startidx = " << index_so_far
-                << " endidx = " << index_so_far + int(allo_ts[k] / dt) - 1
-                << std::endl;
-      index_so_far += int(allo_ts[k] / dt);
-    }
-    // auto poly_con = [h_polys](a_float* c, const a_float* x, const a_float* u)
-    // {
-    //   (void)x;
-    //   // < 0 format
-    //   c =
-    // };
+    // DEBUG!!!!
+    //  std::cout << "allots= " << allo_ts << std::endl;
+    //  uint index_so_far = 0;
+    //  for (int k = 0; k < h_polys.size(); k++) {
+    //    auto h_poly = h_polys[k];
+    //    std::cout << h_poly.first << std::endl;
+    //    const int num_con = h_poly.second.rows();
+    //    auto poly_con = [h_poly](a_float* c, const a_float* x, const a_float*
+    //    u) {
+    //      (void)u;
+    //      const int n_con = h_poly.second.rows();
+    //      Eigen::Map<const Vector> X(x, 13);
+    //      Eigen::Map<Vector> C(c, n_con);
+    //      Eigen::VectorXd C_print =
+    //          h_poly.first * X.segment<3>(0) - h_poly.second;
+    //      std::cout << "C_print = " << C_print << std::endl;
+    //      C = C_print;
+    //    };
+    //    auto poly_jac = [h_poly](
+    //                        a_float* jac, const a_float* x, const a_float* u)
+    //                        {
+    //      (void)u;
+    //      const int n_con = h_poly.second.rows();
+    //      Eigen::Map<Eigen::MatrixXd> J(jac, n_con, 17);
+    //      J.setZero();
+    //      J.block(0, 0, n_con, 3) = h_poly.first;
+    //    };
+
+    //   int next_idx = index_so_far + int(allo_ts[k] / dt);
+    //   if (index_so_far < next_idx)
+    //     err = solver.SetConstraint(poly_con,
+    //                                poly_jac,
+    //                                num_con,
+    //                                ConstraintType::INEQUALITY,
+    //                                "polytope",
+    //                                index_so_far,
+    //                                next_idx);
+    //   std::cout << "k= " << k << " startidx = " << index_so_far
+    //             << " endidx = " << next_idx << std::endl;
+    //   index_so_far = next_idx;
+    // }
+
     solver.Initialize();
+
+    AltroOptions opts;
+    opts.verbose = Verbosity::Silent;
+    opts.iterations_max = 40;
+    opts.use_backtracking_linesearch = true;
+    opts.quat_start_index = 3;  // THIS IS VERY IMPORTANT!
+    solver.SetOptions(opts);
     // ErrorCodes err;
     // solver.Initialize();
     err = solver.SetTimeStep(dt);
     PrintErrorCode(err);
 
-    const int n_const = 13;
-
-    Eigen::Matrix<double, n_const, 1> x0;
-    // x0 << 2.0, 1.0, -1.0,   -0.752,  0.443,  0.443, -0.206,  0.5,-0.5,1.0,
-    // 0.8,0.8,0.8;
-    q_ref[0].normalize();
-    x0 << pos[0], q_ref[0].w(), q_ref[0].vec(), vel[0], w_ref[0];
-    // x0 << 2.0, 1.0, -1.0,  1.0,  0,   0, 0,  0.5,-0.5,0, 0.,0.,0.;
-
-    Eigen::Matrix<double, n_const, 1> xf;
-    xf << pos.back(), 1.0, 0.0, 0.0, 0.0, 0, 0, 0, 0, 0, 0;
     // xf << 0.0, 0.0, 0.0,   1.0, 0.0, 0.0, 0.0,  0,0,0, 0,0,0;
 
     // std::cout <<"size of pos" << pos.size() << std::endl;
@@ -274,34 +289,9 @@ class quadMPC {
       // std::cout<< "q_ref[k] = " << q_ref[k][1] << std::endl;
 
       x_ref_k << pos[k], q_ref[k].w(), q_ref[k].vec(), vel[k], w_ref[k];
-      // std::cout << k << std::endl;
-      //
-
-      if (use_quaternion) {
-        err = solver.SetQuaternionCost(n,
-                                       m,
-                                       Qd.data(),
-                                       Rd.data(),
-                                       1.0,
-                                       x_ref_k.data(),
-                                       u_ref_single.data(),
-                                       k);
-      } else {
-        err = solver.SetLQRCost(
-            n, m, Qd.data(), Rd.data(), x_ref_k.data(), u_ref_single.data(), k);
-      }
-      // PrintErrorCode(err);
-      // fmt::print("Print error\n");
       err = solver.SetState(x_ref_k.data(), n, k);
     }
-    if (use_quaternion) {
-      err = solver.SetQuaternionCost(
-          n, m, Qdf.data(), Rd.data(), 1.0, xf.data(), u_ref_single.data(), N);
-    } else {
-      err = solver.SetLQRCost(
-          n, m, Qdf.data(), Rd.data(), xf.data(), u_ref_single.data(), N);
-    }
-    //
+
     err = solver.SetState(xf.data(), n, N);
 
     // Initial State
