@@ -1,17 +1,17 @@
 #include <ros/ros.h>
+
+#include <chrono>
+#include <filesystem>
+#include <fstream>
+#include <iostream>
+#include <string>
+
 #include "Eigen/Dense"
 #include "altro/altro.hpp"
 #include "kr_ilqr_optimizer/test_utils.hpp"
-#include <chrono>
-#include <fstream>
-#include <filesystem>
-#include <string>
-#include <iostream>
 namespace fs = std::filesystem;
 // using json = nlohmann::json;
 
-
-using Eigen::MatrixXd;
 using Eigen::MatrixXd;
 // using Eigen::Vector;
 
@@ -20,15 +20,16 @@ using Vector = Eigen::Matrix<a_float, Eigen::Dynamic, 1>;
 using Matrix = Eigen::Matrix<a_float, Eigen::Dynamic, Eigen::Dynamic>;
 using Eigen::VectorXi;
 
-// const std::string ALTRO_TEST_DIR ="/home/yifei/Documents/optimal_ctrl/try_altro";
-
+// const std::string ALTRO_TEST_DIR
+// ="/home/yifei/Documents/optimal_ctrl/try_altro";
 
 class quadMPC {
  public:
-  quadMPC(int N, double t_ref_, bool use_quaternion) : N(N), t_ref_(t_ref_), solver(N) {}
+  quadMPC(int N, double t_ref_, bool use_quaternion)
+      : N(N), t_ref_(t_ref_), solver(N) {}
   void SetUp() {
     // Objective
-    std::cout<< "Size of Problem N = "<< N << std::endl;
+    std::cout << "Size of Problem N = " << N << std::endl;
     Qd = Vector::Constant(n, 0);
     Rd = Vector::Constant(m, 0.1);
     Qdf = Vector::Constant(n, 0);
@@ -39,27 +40,27 @@ class quadMPC {
 
     // Dynamics
     auto model_ptr = std::make_shared<quadModel>();
-    ContinuousDynamicsFunction dyn0 = [model_ptr](double *x_dot, const double *x, const double *u) {
-      model_ptr->Dynamics(x_dot, x, u);
-    };
-    ContinuousDynamicsJacobian jac0 = [model_ptr](double *jac, const double *x, const double *u) {
-      model_ptr->Jacobian(jac, x, u);
-    };
+    ContinuousDynamicsFunction dyn0 =
+        [model_ptr](double* x_dot, const double* x, const double* u) {
+          model_ptr->Dynamics(x_dot, x, u);
+        };
+    ContinuousDynamicsJacobian jac0 =
+        [model_ptr](double* jac, const double* x, const double* u) {
+          model_ptr->Jacobian(jac, x, u);
+        };
 
-    ContinuousDynamicsJacobian jac_dt = [model_ptr](double *jac, const double *x, const double *u) {
-      model_ptr->Jacobian_fd(jac, x, u);
-    };
+    ContinuousDynamicsJacobian jac_dt =
+        [model_ptr](double* jac, const double* x, const double* u) {
+          model_ptr->Jacobian_fd(jac, x, u);
+        };
     dyn = MidpointDynamics(n, m, dyn0);
     jac = MidpointJacobian(n, m, dyn0, jac_dt);
-
-
 
     // Dimension and Time step
     err = solver.SetDimension(n, m);
     const int en = 12;
     const int em = 4;
     err = solver.SetErrorDimension(en, em);
-
 
     // Dynamics
     err = solver.SetExplicitDynamics(dyn, jac);
@@ -71,7 +72,8 @@ class quadMPC {
     u_ref_single = Vector::Constant(m, model_ptr->get_hover_input());
     std::cout << "u_ref_single = " << u_ref_single << std::endl;
     // u_ref_single[0] = -1;
-    // ReadScottyTrajectory(&N_ref, &t_ref, &x_ref, &u_ref); // this is where we should input the dispersion planner data
+    // ReadScottyTrajectory(&N_ref, &t_ref, &x_ref, &u_ref); // this is where we
+    // should input the dispersion planner data
 
     // a_float * Qd_data = this->Qd.data();
     // std::cout << "Qd = " << Qd_data[0] << std::endl;
@@ -82,26 +84,37 @@ class quadMPC {
     printf("h = %f\n", h);
     err = solver.SetTimeStep(h);
 
-
-    Eigen::Matrix<double,13,1> xf;
-    xf << 0.,0.,0., 1.0, 0.0, 0.0, 0.0,  0,0,0, 0,0,0;
-    for (int k = 0; k <= N-1; ++k) {
+    Eigen::Matrix<double, 13, 1> xf;
+    xf << 0., 0., 0., 1.0, 0.0, 0.0, 0.0, 0, 0, 0, 0, 0, 0;
+    for (int k = 0; k <= N - 1; ++k) {
       // std::cout << k << std::endl;
-      if (use_quaternion) {err = solver.SetQuaternionCost(n, m, Qd.data(), Rd.data(), 1.0, xf.data(), u_ref_single.data(), k);}
-      else {err = solver.SetLQRCost(n, m, Qd.data(), Rd.data(), xf.data(), u_ref_single.data(), k);}
+      if (use_quaternion) {
+        err = solver.SetQuaternionCost(
+            n, m, Qd.data(), Rd.data(), 1.0, xf.data(), u_ref_single.data(), k);
+      } else {
+        err = solver.SetLQRCost(
+            n, m, Qd.data(), Rd.data(), xf.data(), u_ref_single.data(), k);
+      }
       // fmt::print("Print error\n");
     }
-    // err = solver.SetLQRCost(n, m, Qdf.data(), Rd.data(), xf.data(), u_ref_single.data(), N);
-    if (use_quaternion) {err = solver.SetQuaternionCost(n, m, Qdf.data(), Rd.data(), 1.0, xf.data(), u_ref_single.data(), N);}
-    else {err = solver.SetLQRCost(n, m, Qdf.data(), Rd.data(), xf.data(), u_ref_single.data(), N);}
-    // err = solver.SetQuaternionCost(n, m, Qdf.data(), Rd.data(), 1.0, xf.data(), u_ref_single.data(),N);  
+    // err = solver.SetLQRCost(n, m, Qdf.data(), Rd.data(), xf.data(),
+    // u_ref_single.data(), N);
+    if (use_quaternion) {
+      err = solver.SetQuaternionCost(
+          n, m, Qdf.data(), Rd.data(), 1.0, xf.data(), u_ref_single.data(), N);
+    } else {
+      err = solver.SetLQRCost(
+          n, m, Qdf.data(), Rd.data(), xf.data(), u_ref_single.data(), N);
+    }
+    // err = solver.SetQuaternionCost(n, m, Qdf.data(), Rd.data(), 1.0,
+    // xf.data(), u_ref_single.data(),N);
     err = solver.SetInitialState(xf.data(), n);
-
 
     // Constraints
     const a_float max_thrust = model_ptr->max_thrust_per_prop;
     const a_float min_thrust = model_ptr->min_thrust_per_prop;
-    auto actuator_con = [max_thrust, min_thrust](a_float *c, const a_float *x, const a_float *u) {
+    auto actuator_con = [max_thrust, min_thrust](
+                            a_float* c, const a_float* x, const a_float* u) {
       (void)x;
       // < 0 format
       c[0] = u[0] - max_thrust;
@@ -113,7 +126,7 @@ class quadMPC {
       c[6] = min_thrust - u[2];
       c[7] = min_thrust - u[3];
     };
-    auto actuator_jac = [](a_float *jac, const a_float *x, const a_float *u) {
+    auto actuator_jac = [](a_float* jac, const a_float* x, const a_float* u) {
       (void)x;
       (void)u;
       Eigen::Map<Eigen::Matrix<a_float, 8, 17>> J(jac);
@@ -127,13 +140,18 @@ class quadMPC {
       J(6, 15) = -1.0;
       J(7, 16) = -1.0;
     };
-    err = solver.SetConstraint(actuator_con, actuator_jac, 8, ConstraintType::INEQUALITY,
-                               "Actuator Min Max", 0, N + 1);
+    err = solver.SetConstraint(actuator_con,
+                               actuator_jac,
+                               8,
+                               ConstraintType::INEQUALITY,
+                               "Actuator Min Max",
+                               0,
+                               N + 1);
 
     // Initialize Solver
     err = solver.Initialize();
-    std::cout<<"Solver Initialized!\n"<<std::endl;
-    
+    std::cout << "Solver Initialized!\n" << std::endl;
+
     // Solve
     AltroOptions opts;
     opts.verbose = Verbosity::Silent;
@@ -141,120 +159,146 @@ class quadMPC {
     opts.use_backtracking_linesearch = true;
     opts.quat_start_index = 3;  // THIS IS VERY IMPORTANT!
     solver.SetOptions(opts);
-
   }
-  protected:
-     int N; 
-     double t_ref_;
 
-    const int n = quadModel::NumStates;
-    const int m = quadModel::NumInputs;
-    float h;
+ protected:
+  int N;
+  double t_ref_;
 
-    Vector Qd;
-    Vector Rd;
-    Vector Qdf;
-    bool use_quaternion;
+  const int n = quadModel::NumStates;
+  const int m = quadModel::NumInputs;
+  float h;
 
-    ExplicitDynamicsFunction dyn;
-    ExplicitDynamicsJacobian jac;
+  Vector Qd;
+  Vector Rd;
+  Vector Qdf;
+  bool use_quaternion;
 
-    ALTROSolver solver;
+  ExplicitDynamicsFunction dyn;
+  ExplicitDynamicsJacobian jac;
 
-    ErrorCodes err;
-    // Reference Trajectory (the "Scotty Dog")
-    std::vector<Eigen::Matrix<double, 13, 1>> x_ref;
-    std::vector<Eigen::Vector4d> u_ref;
-    Vector u0;
-    Eigen::Vector4d u_ref_single;
+  ALTROSolver solver;
 
-  public:
-    uint solve_problem(std::vector<Eigen::Vector3d> pos, std::vector<Eigen::Vector3d> vel, std::vector<Eigen::Vector3d> acc, std::vector<double> yaw_ref,
-                                std::vector<double> thrust, std::vector<Eigen::Vector3d> moment, std::vector<double> t, int N_input,  std::vector<Eigen::Quaterniond> q_ref, std::vector<Eigen::Vector3d> w_ref,
-                                std::vector<Vector> & X_sim, std::vector<Vector> & U_sim, std::vector<double> & t_sim){
-      (void) t;
-      (void) N_input;
+  ErrorCodes err;
+  // Reference Trajectory (the "Scotty Dog")
+  std::vector<Eigen::Matrix<double, 13, 1>> x_ref;
+  std::vector<Eigen::Vector4d> u_ref;
+  Vector u0;
+  Eigen::Vector4d u_ref_single;
 
-      // ErrorCodes err;
-      // solver.Initialize();
+ public:
+  uint solve_problem(
+      std::vector<Eigen::Vector3d> pos,
+      std::vector<Eigen::Vector3d> vel,
+      std::vector<Eigen::Vector3d> acc,
+      std::vector<double> yaw_ref,
+      std::vector<double> thrust,
+      std::vector<Eigen::Vector3d> moment,
+      double dt,
+      int N_input,
+      std::vector<Eigen::Quaterniond> q_ref,
+      std::vector<Eigen::Vector3d> w_ref,
+      const std::vector<std::pair<Eigen::MatrixXd, Eigen::VectorXd>>& h_polys,
+      const Eigen::VectorXd& allo_ts,
+      std::vector<Vector>& X_sim,
+      std::vector<Vector>& U_sim,
+      std::vector<double>& t_sim) {
+    (void)N_input;
 
+    // ErrorCodes err;
+    // solver.Initialize();
+    err = solver.SetTimeStep(dt);
+    PrintErrorCode(err);
 
-      const int n_const = 13;
+    const int n_const = 13;
 
-      Eigen::Matrix<double,n_const,1> x0;
-      // x0 << 2.0, 1.0, -1.0,   -0.752,  0.443,  0.443, -0.206,  0.5,-0.5,1.0, 0.8,0.8,0.8;
-      q_ref[0].normalize();
-      x0 << pos[0], q_ref[0].w(), q_ref[0].vec(), vel[0], w_ref[0];
-      // x0 << 2.0, 1.0, -1.0,  1.0,  0,   0, 0,  0.5,-0.5,0, 0.,0.,0.;
+    Eigen::Matrix<double, n_const, 1> x0;
+    // x0 << 2.0, 1.0, -1.0,   -0.752,  0.443,  0.443, -0.206,  0.5,-0.5,1.0,
+    // 0.8,0.8,0.8;
+    q_ref[0].normalize();
+    x0 << pos[0], q_ref[0].w(), q_ref[0].vec(), vel[0], w_ref[0];
+    // x0 << 2.0, 1.0, -1.0,  1.0,  0,   0, 0,  0.5,-0.5,0, 0.,0.,0.;
 
-      Eigen::Matrix<double,n_const,1> xf;
-      xf << pos.back(), 1.0, 0.0, 0.0, 0.0,  0,0,0, 0,0,0;
-      // xf << 0.0, 0.0, 0.0,   1.0, 0.0, 0.0, 0.0,  0,0,0, 0,0,0;
+    Eigen::Matrix<double, n_const, 1> xf;
+    xf << pos.back(), 1.0, 0.0, 0.0, 0.0, 0, 0, 0, 0, 0, 0;
+    // xf << 0.0, 0.0, 0.0,   1.0, 0.0, 0.0, 0.0,  0,0,0, 0,0,0;
 
-      // std::cout <<"size of pos" << pos.size() << std::endl;
-      // std::cout << "x0 = " << x0 << std::endl;
-      // std::cout << "xf = " << xf << std::endl;
-      // Set Tracking Cost Function
-      for (int k = 0; k <= N-1; ++k) {
-        Eigen::Matrix<double,13,1> x_ref_k;
-        // std::cout<< "ref k = " << k << std::endl;
-        // std::cout<< "pos[k] = " << pos[k] << std::endl;
-        // std::cout<< "q_ref[k] = " << q_ref[k][1] << std::endl;
+    // std::cout <<"size of pos" << pos.size() << std::endl;
+    // std::cout << "x0 = " << x0 << std::endl;
+    // std::cout << "xf = " << xf << std::endl;
+    // Set Tracking Cost Function
+    for (int k = 0; k <= N - 1; ++k) {
+      Eigen::Matrix<double, 13, 1> x_ref_k;
+      // std::cout<< "ref k = " << k << std::endl;
+      // std::cout<< "pos[k] = " << pos[k] << std::endl;
+      // std::cout<< "q_ref[k] = " << q_ref[k][1] << std::endl;
 
-        x_ref_k << pos[k], q_ref[k].w(), q_ref[k].vec(), vel[k], w_ref[k];
-        // std::cout << k << std::endl;
-        // 
-        
-        if (use_quaternion) {err = solver.SetQuaternionCost(n, m, Qd.data(), Rd.data(), 1.0, x_ref_k.data(), u_ref_single.data(), k);}
-        else{err = solver.SetLQRCost(n, m, Qd.data(), Rd.data(), x_ref_k.data(), u_ref_single.data(), k);}        
-        // PrintErrorCode(err);
-        // fmt::print("Print error\n");
-        err = solver.SetState(x_ref_k.data(), n, k);
+      x_ref_k << pos[k], q_ref[k].w(), q_ref[k].vec(), vel[k], w_ref[k];
+      // std::cout << k << std::endl;
+      //
 
+      if (use_quaternion) {
+        err = solver.SetQuaternionCost(n,
+                                       m,
+                                       Qd.data(),
+                                       Rd.data(),
+                                       1.0,
+                                       x_ref_k.data(),
+                                       u_ref_single.data(),
+                                       k);
+      } else {
+        err = solver.SetLQRCost(
+            n, m, Qd.data(), Rd.data(), x_ref_k.data(), u_ref_single.data(), k);
       }
-      if (use_quaternion) {err = solver.SetQuaternionCost(n, m, Qdf.data(), Rd.data(), 1.0, xf.data(), u_ref_single.data(), N);}
-      else {err = solver.SetLQRCost(n, m, Qdf.data(), Rd.data(), xf.data(), u_ref_single.data(), N);}
-        // 
-      err = solver.SetState(xf.data(), n, N);
-
-        // Initial State
-      err = solver.SetInitialState(x0.data(), n);
-
-      // Set Initial Trajectory
-      err = solver.SetInput(u_ref_single.data(), m);
-      // fmt::print("Set Input Finished!\n");
-
-      solver.OpenLoopRollout();
-      double cost_initial = solver.CalcCost();
-      // fmt::print("Initial cost = {}\n", cost_initial);
-
-      
-      SolveStatus status = solver.Solve();
-
-      std::cout << "Solve status is: " << static_cast<uint>(status) << std::endl; 
-      cost_initial = solver.CalcCost();
-      // fmt::print("Final cost = {}\n", cost_initial);
-      
-      // std::vector<Vector> X_sim;
-      // std::vector<Vector> U_sim;
-      // std::vector<float> t_sim;
-      float t_now = 0;
-      for (int k = 0; k <= N; k++) {
-        Eigen::VectorXd x(n);
-        solver.GetState(x.data(), k);
-        X_sim.emplace_back(x);
-        t_sim.emplace_back(t_now);
-        t_now += solver.GetTimeStep(k);
-        if (k != N) {
-          Eigen::VectorXd u(m);
-          solver.GetInput(u.data(), k);
-          U_sim.emplace_back(u);
-        }
-      }
-      // ROS_ERROR("SHUTTING DOWN SINGLE TEST");
-      // ros::shutdown();
-      return static_cast<uint>(status);
+      // PrintErrorCode(err);
+      // fmt::print("Print error\n");
+      err = solver.SetState(x_ref_k.data(), n, k);
     }
-   
-    
+    if (use_quaternion) {
+      err = solver.SetQuaternionCost(
+          n, m, Qdf.data(), Rd.data(), 1.0, xf.data(), u_ref_single.data(), N);
+    } else {
+      err = solver.SetLQRCost(
+          n, m, Qdf.data(), Rd.data(), xf.data(), u_ref_single.data(), N);
+    }
+    //
+    err = solver.SetState(xf.data(), n, N);
+
+    // Initial State
+    err = solver.SetInitialState(x0.data(), n);
+
+    // Set Initial Trajectory
+    err = solver.SetInput(u_ref_single.data(), m);
+    // fmt::print("Set Input Finished!\n");
+
+    solver.OpenLoopRollout();
+    double cost_initial = solver.CalcCost();
+    // fmt::print("Initial cost = {}\n", cost_initial);
+
+    SolveStatus status = solver.Solve();
+
+    std::cout << "Solve status is: " << static_cast<uint>(status) << std::endl;
+    cost_initial = solver.CalcCost();
+    // fmt::print("Final cost = {}\n", cost_initial);
+
+    // std::vector<Vector> X_sim;
+    // std::vector<Vector> U_sim;
+    // std::vector<float> t_sim;
+    float t_now = 0;
+    for (int k = 0; k <= N; k++) {
+      Eigen::VectorXd x(n);
+      solver.GetState(x.data(), k);
+      X_sim.emplace_back(x);
+      t_sim.emplace_back(t_now);
+      t_now += solver.GetTimeStep(k);
+      if (k != N) {
+        Eigen::VectorXd u(m);
+        solver.GetInput(u.data(), k);
+        U_sim.emplace_back(u);
+      }
+    }
+    // ROS_ERROR("SHUTTING DOWN SINGLE TEST");
+    // ros::shutdown();
+    return static_cast<uint>(status);
+  }
 };
