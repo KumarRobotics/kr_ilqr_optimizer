@@ -28,6 +28,7 @@ class quadMPC {
   quadMPC(int N, double t_ref_, bool use_quaternion)
       : N(N), t_ref_(t_ref_), solver(N) {}
   void SetUp() {
+    model_ptr = std::make_shared<const quadModel>();
     // Objective
     std::cout << "Size of Problem N = " << N << std::endl;
     Qd = Vector::Constant(n, 0);
@@ -39,18 +40,17 @@ class quadMPC {
     Qdf.segment<3>(7) = Vector::Constant(three, 0.1);
 
     // Dynamics
-    auto model_ptr = std::make_shared<quadModel>();
     ContinuousDynamicsFunction dyn0 =
-        [model_ptr](double* x_dot, const double* x, const double* u) {
+        [this](double* x_dot, const double* x, const double* u) {
           model_ptr->Dynamics(x_dot, x, u);
         };
     ContinuousDynamicsJacobian jac0 =
-        [model_ptr](double* jac, const double* x, const double* u) {
+        [this](double* jac, const double* x, const double* u) {
           model_ptr->Jacobian(jac, x, u);
         };
 
     ContinuousDynamicsJacobian jac_dt =
-        [model_ptr](double* jac, const double* x, const double* u) {
+        [this](double* jac, const double* x, const double* u) {
           model_ptr->Jacobian_fd(jac, x, u);
         };
     dyn = MidpointDynamics(n, m, dyn0);
@@ -110,6 +110,62 @@ class quadMPC {
     // xf.data(), u_ref_single.data(),N);
     err = solver.SetInitialState(xf.data(), n);
 
+    // Initialize Solver
+    err = solver.Initialize();
+    std::cout << "Solver Initialized!\n" << std::endl;
+
+    // Solve
+    AltroOptions opts;
+    opts.verbose = Verbosity::Silent;
+    opts.iterations_max = 40;
+    opts.use_backtracking_linesearch = true;
+    opts.quat_start_index = 3;  // THIS IS VERY IMPORTANT!
+    solver.SetOptions(opts);
+  }
+
+ protected:
+  std::shared_ptr<const quadModel> model_ptr;
+  int N;
+  double t_ref_;
+
+  const int n = quadModel::NumStates;
+  const int m = quadModel::NumInputs;
+  float h;
+
+  Vector Qd;
+  Vector Rd;
+  Vector Qdf;
+  bool use_quaternion;
+
+  ExplicitDynamicsFunction dyn;
+  ExplicitDynamicsJacobian jac;
+
+  ALTROSolver solver;
+
+  ErrorCodes err;
+  // Reference Trajectory (the "Scotty Dog")
+  std::vector<Eigen::Matrix<double, 13, 1>> x_ref;
+  std::vector<Eigen::Vector4d> u_ref;
+  Vector u0;
+  Eigen::Vector4d u_ref_single;
+
+ public:
+  uint solve_problem(
+      std::vector<Eigen::Vector3d> pos,
+      std::vector<Eigen::Vector3d> vel,
+      std::vector<Eigen::Vector3d> acc,
+      std::vector<double> yaw_ref,
+      std::vector<double> thrust,
+      std::vector<Eigen::Vector3d> moment,
+      double dt,
+      std::vector<Eigen::Quaterniond> q_ref,
+      std::vector<Eigen::Vector3d> w_ref,
+      const std::vector<std::pair<Eigen::MatrixXd, Eigen::VectorXd>>& h_polys,
+      const Eigen::VectorXd& allo_ts,
+      std::vector<Vector>& X_sim,
+      std::vector<Vector>& U_sim,
+      std::vector<double>& t_sim) {
+    err = solver.Deinitialize();
     // Constraints
     const a_float max_thrust = model_ptr->max_thrust_per_prop;
     const a_float min_thrust = model_ptr->min_thrust_per_prop;
@@ -148,63 +204,47 @@ class quadMPC {
                                0,
                                N + 1);
 
-    // Initialize Solver
-    err = solver.Initialize();
-    std::cout << "Solver Initialized!\n" << std::endl;
-
-    // Solve
-    AltroOptions opts;
-    opts.verbose = Verbosity::Silent;
-    opts.iterations_max = 40;
-    opts.use_backtracking_linesearch = true;
-    opts.quat_start_index = 3;  // THIS IS VERY IMPORTANT!
-    solver.SetOptions(opts);
-  }
-
- protected:
-  int N;
-  double t_ref_;
-
-  const int n = quadModel::NumStates;
-  const int m = quadModel::NumInputs;
-  float h;
-
-  Vector Qd;
-  Vector Rd;
-  Vector Qdf;
-  bool use_quaternion;
-
-  ExplicitDynamicsFunction dyn;
-  ExplicitDynamicsJacobian jac;
-
-  ALTROSolver solver;
-
-  ErrorCodes err;
-  // Reference Trajectory (the "Scotty Dog")
-  std::vector<Eigen::Matrix<double, 13, 1>> x_ref;
-  std::vector<Eigen::Vector4d> u_ref;
-  Vector u0;
-  Eigen::Vector4d u_ref_single;
-
- public:
-  uint solve_problem(
-      std::vector<Eigen::Vector3d> pos,
-      std::vector<Eigen::Vector3d> vel,
-      std::vector<Eigen::Vector3d> acc,
-      std::vector<double> yaw_ref,
-      std::vector<double> thrust,
-      std::vector<Eigen::Vector3d> moment,
-      double dt,
-      int N_input,
-      std::vector<Eigen::Quaterniond> q_ref,
-      std::vector<Eigen::Vector3d> w_ref,
-      const std::vector<std::pair<Eigen::MatrixXd, Eigen::VectorXd>>& h_polys,
-      const Eigen::VectorXd& allo_ts,
-      std::vector<Vector>& X_sim,
-      std::vector<Vector>& U_sim,
-      std::vector<double>& t_sim) {
-    (void)N_input;
-
+    // int cur_poly_idx = 0;
+    std::cout << "allots= " << allo_ts << std::endl;
+    uint index_so_far = 0;
+    for (int k = 0; k < h_polys.size(); k++) {
+      auto h_poly = h_polys[k];
+      const int num_con = h_poly.second.cols();
+      auto poly_con = [h_poly, allo_ts](
+                          a_float* c, const a_float* x, const a_float* u) {
+        (void)u;
+        const int n_con = h_poly.second.cols();
+        Eigen::Map<const Vector> X(x, 13);
+        Eigen::Map<Vector> C(c, n_con);
+        C = h_poly.first * X.segment<3>(0) - h_poly.second;
+      };
+      auto poly_jac = [h_poly](
+                          a_float* jac, const a_float* x, const a_float* u) {
+        (void)u;
+        const int n_con = h_poly.second.cols();
+        Eigen::Map<Eigen::MatrixXd> J(jac, n_con, 17);
+        J.setZero();
+        J.block(0, 0, n_con, 3) = h_poly.first;
+      };
+      err = solver.SetConstraint(poly_con,
+                                 poly_jac,
+                                 num_con,
+                                 ConstraintType::INEQUALITY,
+                                 "polytope",
+                                 index_so_far,
+                                 index_so_far + int(allo_ts[k] / dt) - 1);
+      std::cout << "k= " << k << " startidx = " << index_so_far
+                << " endidx = " << index_so_far + int(allo_ts[k] / dt) - 1
+                << std::endl;
+      index_so_far += int(allo_ts[k] / dt);
+    }
+    // auto poly_con = [h_polys](a_float* c, const a_float* x, const a_float* u)
+    // {
+    //   (void)x;
+    //   // < 0 format
+    //   c =
+    // };
+    solver.Initialize();
     // ErrorCodes err;
     // solver.Initialize();
     err = solver.SetTimeStep(dt);

@@ -108,7 +108,6 @@ class SplineTrajSampler {
       std::vector<double> thrust,
       std::vector<Eigen::Vector3d> moment,
       double t,
-      int N,
       std::vector<Eigen::Quaterniond> q_ref,
       std::vector<Eigen::Vector3d> w_ref,
       const std::vector<std::pair<Eigen::MatrixXd, Eigen::VectorXd>>& h_polys,
