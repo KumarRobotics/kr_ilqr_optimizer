@@ -131,6 +131,7 @@ class quadMPC {
 
     Eigen::Matrix<double, 13, 1> xf;
     xf << 0., 0., 0., 1.0, 0.0, 0.0, 0.0, 0, 0, 0, 0, 0, 0;
+    // Suprise ! Specifying COST FUNCTION TWICE is useful!!
     for (int k = 0; k <= N - 1; ++k) {
       // std::cout << k << std::endl;
       if (use_quaternion) {
