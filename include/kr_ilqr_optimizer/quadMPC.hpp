@@ -31,6 +31,51 @@ class quadMPC {
     model_ptr = std::make_shared<const quadModel>();
     // Objective
     std::cout << "Size of Problem N = " << N << std::endl;
+  }
+
+ protected:
+  std::shared_ptr<const quadModel> model_ptr;
+  int N;
+  double t_ref_;
+
+  const int n = quadModel::NumStates;
+  const int m = quadModel::NumInputs;
+  float h;
+
+  Vector Qd;
+  Vector Rd;
+  Vector Qdf;
+  bool use_quaternion;
+
+  ExplicitDynamicsFunction dyn;
+  ExplicitDynamicsJacobian jac;
+
+  ALTROSolver solver;
+
+  ErrorCodes err;
+  // Reference Trajectory (the "Scotty Dog")
+  std::vector<Eigen::Matrix<double, 13, 1>> x_ref;
+  std::vector<Eigen::Vector4d> u_ref;
+  Vector u0;
+  Eigen::Vector4d u_ref_single;
+
+ public:
+  uint solve_problem(
+      std::vector<Eigen::Vector3d> pos,
+      std::vector<Eigen::Vector3d> vel,
+      std::vector<Eigen::Vector3d> acc,
+      std::vector<double> yaw_ref,
+      std::vector<double> thrust,
+      std::vector<Eigen::Vector3d> moment,
+      double dt,
+      std::vector<Eigen::Quaterniond> q_ref,
+      std::vector<Eigen::Vector3d> w_ref,
+      const std::vector<std::pair<Eigen::MatrixXd, Eigen::VectorXd>>& h_polys,
+      const Eigen::VectorXd& allo_ts,
+      std::vector<Vector>& X_sim,
+      std::vector<Vector>& U_sim,
+      std::vector<double>& t_sim) {
+    solver = ALTROSolver(N);
     Qd = Vector::Constant(n, 0);
     Rd = Vector::Constant(m, 0.1);
     Qdf = Vector::Constant(n, 0);
@@ -111,8 +156,8 @@ class quadMPC {
     err = solver.SetInitialState(xf.data(), n);
 
     // Initialize Solver
-    err = solver.Initialize();
-    std::cout << "Solver Initialized!\n" << std::endl;
+    // err = solver.Initialize();
+    // std::cout << "Solver Initialized!\n" << std::endl;
 
     // Solve
     AltroOptions opts;
@@ -121,51 +166,6 @@ class quadMPC {
     opts.use_backtracking_linesearch = true;
     opts.quat_start_index = 3;  // THIS IS VERY IMPORTANT!
     solver.SetOptions(opts);
-  }
-
- protected:
-  std::shared_ptr<const quadModel> model_ptr;
-  int N;
-  double t_ref_;
-
-  const int n = quadModel::NumStates;
-  const int m = quadModel::NumInputs;
-  float h;
-
-  Vector Qd;
-  Vector Rd;
-  Vector Qdf;
-  bool use_quaternion;
-
-  ExplicitDynamicsFunction dyn;
-  ExplicitDynamicsJacobian jac;
-
-  ALTROSolver solver;
-
-  ErrorCodes err;
-  // Reference Trajectory (the "Scotty Dog")
-  std::vector<Eigen::Matrix<double, 13, 1>> x_ref;
-  std::vector<Eigen::Vector4d> u_ref;
-  Vector u0;
-  Eigen::Vector4d u_ref_single;
-
- public:
-  uint solve_problem(
-      std::vector<Eigen::Vector3d> pos,
-      std::vector<Eigen::Vector3d> vel,
-      std::vector<Eigen::Vector3d> acc,
-      std::vector<double> yaw_ref,
-      std::vector<double> thrust,
-      std::vector<Eigen::Vector3d> moment,
-      double dt,
-      std::vector<Eigen::Quaterniond> q_ref,
-      std::vector<Eigen::Vector3d> w_ref,
-      const std::vector<std::pair<Eigen::MatrixXd, Eigen::VectorXd>>& h_polys,
-      const Eigen::VectorXd& allo_ts,
-      std::vector<Vector>& X_sim,
-      std::vector<Vector>& U_sim,
-      std::vector<double>& t_sim) {
-    err = solver.Deinitialize();
     // Constraints
     const a_float max_thrust = model_ptr->max_thrust_per_prop;
     const a_float min_thrust = model_ptr->min_thrust_per_prop;
@@ -210,8 +210,7 @@ class quadMPC {
     for (int k = 0; k < h_polys.size(); k++) {
       auto h_poly = h_polys[k];
       const int num_con = h_poly.second.rows();
-      auto poly_con = [h_poly, allo_ts](
-                          a_float* c, const a_float* x, const a_float* u) {
+      auto poly_con = [h_poly](a_float* c, const a_float* x, const a_float* u) {
         (void)u;
         const int n_con = h_poly.second.rows();
         Eigen::Map<const Vector> X(x, 13);
@@ -226,17 +225,17 @@ class quadMPC {
         J.setZero();
         J.block(0, 0, n_con, 3) = h_poly.first;
       };
+      uint idx_end = index_so_far + int(allo_ts[k] / dt);
       err = solver.SetConstraint(poly_con,
                                  poly_jac,
                                  num_con,
                                  ConstraintType::INEQUALITY,
                                  "polytope",
                                  index_so_far,
-                                 index_so_far + int(allo_ts[k] / dt) - 1);
+                                 idx_end);
       std::cout << "k= " << k << " startidx = " << index_so_far
-                << " endidx = " << index_so_far + int(allo_ts[k] / dt) - 1
-                << std::endl;
-      index_so_far += int(allo_ts[k] / dt);
+                << " endidx = " << idx_end << std::endl;
+      index_so_far = idx_end;
     }
     // auto poly_con = [h_polys](a_float* c, const a_float* x, const a_float* u)
     // {
@@ -259,7 +258,7 @@ class quadMPC {
     x0 << pos[0], q_ref[0].w(), q_ref[0].vec(), vel[0], w_ref[0];
     // x0 << 2.0, 1.0, -1.0,  1.0,  0,   0, 0,  0.5,-0.5,0, 0.,0.,0.;
 
-    Eigen::Matrix<double, n_const, 1> xf;
+    // Eigen::Matrix<double, n_const, 1> xf;
     xf << pos.back(), 1.0, 0.0, 0.0, 0.0, 0, 0, 0, 0, 0, 0;
     // xf << 0.0, 0.0, 0.0,   1.0, 0.0, 0.0, 0.0,  0,0,0, 0,0,0;
 
@@ -314,8 +313,13 @@ class quadMPC {
     solver.OpenLoopRollout();
     double cost_initial = solver.CalcCost();
     // fmt::print("Initial cost = {}\n", cost_initial);
-
-    SolveStatus status = solver.Solve();
+    SolveStatus status = SolveStatus::Success;
+    try {
+      status = solver.Solve();
+    } catch (std::exception& e) {
+      std::cout << "Exception caught: " << e.what() << std::endl;
+      status = SolveStatus::Unsolved;
+    }
 
     std::cout << "Solve status is: " << static_cast<uint>(status) << std::endl;
     cost_initial = solver.CalcCost();
