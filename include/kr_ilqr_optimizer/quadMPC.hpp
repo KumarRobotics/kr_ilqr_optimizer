@@ -209,11 +209,11 @@ class quadMPC {
     uint index_so_far = 0;
     for (int k = 0; k < h_polys.size(); k++) {
       auto h_poly = h_polys[k];
-      const int num_con = h_poly.second.cols();
+      const int num_con = h_poly.second.rows();
       auto poly_con = [h_poly, allo_ts](
                           a_float* c, const a_float* x, const a_float* u) {
         (void)u;
-        const int n_con = h_poly.second.cols();
+        const int n_con = h_poly.second.rows();
         Eigen::Map<const Vector> X(x, 13);
         Eigen::Map<Vector> C(c, n_con);
         C = h_poly.first * X.segment<3>(0) - h_poly.second;
@@ -221,7 +221,7 @@ class quadMPC {
       auto poly_jac = [h_poly](
                           a_float* jac, const a_float* x, const a_float* u) {
         (void)u;
-        const int n_con = h_poly.second.cols();
+        const int n_con = h_poly.second.rows();
         Eigen::Map<Eigen::MatrixXd> J(jac, n_con, 17);
         J.setZero();
         J.block(0, 0, n_con, 3) = h_poly.first;
