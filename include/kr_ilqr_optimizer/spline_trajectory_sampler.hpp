@@ -56,7 +56,7 @@ class SplineTrajSampler {
         publish_optimized_traj_(publish_optimized_traj_),
         publish_viz_(publish_viz_),
         N_sample_pts_(N_sample_pts_) {
-    bool use_quat = false;
+    bool use_quat = true;
     mpc_solver =
         std::make_unique<quadMPC>(N_sample_pts_, time_limit_, use_quat);
     ros::NodeHandle n;

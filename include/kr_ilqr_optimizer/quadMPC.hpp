@@ -99,7 +99,7 @@ class quadMPC {
           model_ptr->Jacobian_fd(jac, x, u);
         };
     dyn = MidpointDynamics(n, m, dyn0);
-    jac = MidpointJacobian(n, m, dyn0, jac_dt);
+    jac = MidpointJacobian(n, m, dyn0, jac0);
 
     // Dimension and Time step
     err = solver.SetDimension(n, m);
@@ -166,6 +166,7 @@ class quadMPC {
     opts.iterations_max = 40;
     opts.use_backtracking_linesearch = true;
     opts.quat_start_index = 3;  // THIS IS VERY IMPORTANT!
+    opts.use_quaternion = use_quaternion;
     solver.SetOptions(opts);
     // Constraints
     const a_float max_thrust = model_ptr->max_thrust_per_prop;
