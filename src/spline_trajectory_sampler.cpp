@@ -266,16 +266,18 @@ SplineTrajSampler::sample_and_refine_trajectory(
 
     Eigen::Vector3d yaw_three_der = Eigen::Vector3d(0, 0, 0);
     yaw_ref[i] = yaw_three_der[0];
-    Eigen::Vector3d M = compute_ref_inputs(pos[i],
-                                           vel[i],
-                                           acc[i],
-                                           jerk[i],
-                                           snap[i],
-                                           yaw_three_der,
-                                           thrust,
-                                           moment,
-                                           q_return,
-                                           w_return);
+    Eigen::Vector3d M;
+    // comment out due to comma initializer bug
+    //  = compute_ref_inputs(pos[i],
+    //                       vel[i],
+    //                       acc[i],
+    //                       jerk[i],
+    //                       snap[i],
+    //                       yaw_three_der,
+    //                       thrust,
+    //                       moment,
+    //                       q_return,
+    //                       w_return);
     moment_ref[i] = M;
     thrust_ref[i] = thrust;
 
