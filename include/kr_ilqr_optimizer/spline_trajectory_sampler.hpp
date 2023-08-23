@@ -145,6 +145,11 @@ class SplineTrajSampler {
 
     return result;
   }
+  Eigen::Matrix3d skew(const Eigen::Vector3d& x) {
+    Eigen::Matrix3d s;
+    s << 0, -x[2], x[1], x[2], 0, -x[0], -x[1], x[0], 0;
+    return s;
+  }
 
   /**
    * This tutorial demonstrates simple sending of messages over the ROS system.

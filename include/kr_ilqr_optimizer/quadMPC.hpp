@@ -32,9 +32,9 @@ class quadMPC {
     // Objective
     std::cout << "Size of Problem N = " << N << std::endl;
   }
+  std::shared_ptr<const quadModel> model_ptr;
 
  protected:
-  std::shared_ptr<const quadModel> model_ptr;
   int N;
   double t_ref_;
 
@@ -82,7 +82,8 @@ class quadMPC {
     const int three = 3;
     Qd.segment<3>(0) = Vector::Constant(three, 0.1);
     Qdf.segment<3>(0) = Vector::Constant(three, 0.1);
-    Qdf.segment<3>(7) = Vector::Constant(three, 0.1);
+    Qdf.segment<3>(10) = Vector::Constant(three, 0.2);
+    Qdf.segment<3>(7) = Vector::Constant(three, 10);
 
     // Dynamics
     ContinuousDynamicsFunction dyn0 =
@@ -198,6 +199,7 @@ class quadMPC {
       J(6, 15) = -1.0;
       J(7, 16) = -1.0;
     };
+
     err = solver.SetConstraint(actuator_con,
                                actuator_jac,
                                8,
@@ -262,6 +264,9 @@ class quadMPC {
 
     // Eigen::Matrix<double, n_const, 1> xf;
     xf << pos.back(), 1.0, 0.0, 0.0, 0.0, 0, 0, 0, 0, 0, 0;
+
+    std::cout << "x0 = " << x0 << std::endl;
+    std::cout << "xf = " << xf << std::endl;
     // xf << 0.0, 0.0, 0.0,   1.0, 0.0, 0.0, 0.0,  0,0,0, 0,0,0;
 
     // std::cout <<"size of pos" << pos.size() << std::endl;
@@ -341,6 +346,8 @@ class quadMPC {
         Eigen::VectorXd u(m);
         solver.GetInput(u.data(), k);
         U_sim.emplace_back(u);
+      } else {
+        std::cout << "last state = " << x << std::endl;
       }
     }
     // ROS_ERROR("SHUTTING DOWN SINGLE TEST");
