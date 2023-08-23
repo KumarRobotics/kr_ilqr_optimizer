@@ -83,7 +83,7 @@ class quadMPC {
     Qd.segment<3>(0) = Vector::Constant(three, 0.1);
     Qdf.segment<3>(0) = Vector::Constant(three, 0.1);
     Qdf.segment<3>(10) = Vector::Constant(three, 0.2);
-    Qdf.segment<3>(7) = Vector::Constant(three, 10);
+    Qdf.segment<3>(7) = Vector::Constant(three, 0.2);
 
     // Dynamics
     ContinuousDynamicsFunction dyn0 =
@@ -131,7 +131,7 @@ class quadMPC {
     err = solver.SetTimeStep(h);
 
     Eigen::Matrix<double, 13, 1> xf;
-    xf << 0., 0., 0., 1.0, 0.0, 0.0, 0.0, 0, 0, 0, 0, 0, 0;
+    xf << pos.back(), 1.0, 0.0, 0.0, 0.0, 0, 0, 0, 0, 0, 0;
     // Suprise ! Specifying COST FUNCTION TWICE is useful!!
     for (int k = 0; k <= N - 1; ++k) {
       // std::cout << k << std::endl;
@@ -199,7 +199,31 @@ class quadMPC {
       J(6, 15) = -1.0;
       J(7, 16) = -1.0;
     };
-
+    auto state_con = [xf](a_float* c, const a_float* x, const a_float* u) {
+      (void)u;
+      // Eigen::Map<const Vector> X(x, 13);
+      // Eigen::Map<Vector> C(c, 6);
+      // constrain velocity and angular velocity to 0
+      c[0] = x[7];
+      c[1] = x[8];
+      c[2] = x[9];
+      c[3] = x[10];
+      c[4] = x[11];
+      c[5] = x[12];
+    };
+    auto state_jac = [](a_float* jac, const a_float* x, const a_float* u) {
+      (void)u;
+      Eigen::Map<Eigen::Matrix<a_float, 6, 17>> J(jac);
+      J.setZero();
+      J(0, 7) = 1.0;
+      J(1, 8) = 1.0;
+      J(2, 9) = 1.0;
+      J(3, 10) = 1.0;
+      J(4, 11) = 1.0;
+      J(5, 12) = 1.0;
+    };
+    err = solver.SetConstraint(
+        state_con, state_jac, 6, ConstraintType::EQUALITY, "State", N);
     err = solver.SetConstraint(actuator_con,
                                actuator_jac,
                                8,
@@ -263,7 +287,6 @@ class quadMPC {
     // x0 << 2.0, 1.0, -1.0,  1.0,  0,   0, 0,  0.5,-0.5,0, 0.,0.,0.;
 
     // Eigen::Matrix<double, n_const, 1> xf;
-    xf << pos.back(), 1.0, 0.0, 0.0, 0.0, 0, 0, 0, 0, 0, 0;
 
     std::cout << "x0 = " << x0 << std::endl;
     std::cout << "xf = " << xf << std::endl;

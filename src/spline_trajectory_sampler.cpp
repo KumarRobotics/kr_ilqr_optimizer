@@ -180,7 +180,7 @@ kr_planning_msgs::TrajectoryDiscretized SplineTrajSampler::publish_altro(
 
     auto a_world = (q_unpack * a_body) - Eigen::Vector3d(0, 0, 9.81);
     // std::cout << "a_world = " << a_world << std::endl;
-    // std::cout << "a_world = " << a_world << std::endl;
+    std::cout << "a_world = " << a_world << std::endl;
 
     Eigen::Vector3d v_body;
     v_body << X_sim[i][7], X_sim[i][8], X_sim[i][9];
