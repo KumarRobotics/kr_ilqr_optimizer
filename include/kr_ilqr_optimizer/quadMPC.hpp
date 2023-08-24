@@ -379,7 +379,9 @@ class quadMPC {
         std::cout << "last state = " << x << std::endl;
       }
     }
-    // ROS_ERROR("SHUTTING DOWN SINGLE TEST");
+    if (static_cast<uint>(status) != 0)
+      ROS_ERROR_STREAM(
+          "Solve failed with status: " << static_cast<uint>(status));
     // ros::shutdown();
     return static_cast<uint>(status);
   }
