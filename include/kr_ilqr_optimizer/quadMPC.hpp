@@ -204,16 +204,21 @@ class quadMPC {
       // Eigen::Map<const Vector> X(x, 13);
       // Eigen::Map<Vector> C(c, 6);
       // constrain velocity and angular velocity to 0
-      c[0] = x[7];
+      c[0] = x[7];  // v = 0
       c[1] = x[8];
       c[2] = x[9];
-      c[3] = x[10];
+      c[3] = x[10];  // w= 0
       c[4] = x[11];
       c[5] = x[12];
+      c[6] = x[0] - xf(0);  // xf = xf
+      c[7] = x[1] - xf(1);
+      c[8] = x[2] - xf(2);
+      // c[9] = x[3] - 1.0;  // qf = 0 #We do not want to constrain the quad to
+      // face a direction c[10] = x[4]; c[11] = x[5]; c[12] = x[6];
     };
     auto state_jac = [](a_float* jac, const a_float* x, const a_float* u) {
       (void)u;
-      Eigen::Map<Eigen::Matrix<a_float, 6, 17>> J(jac);
+      Eigen::Map<Eigen::Matrix<a_float, 9, 17>> J(jac);
       J.setZero();
       J(0, 7) = 1.0;
       J(1, 8) = 1.0;
@@ -221,9 +226,37 @@ class quadMPC {
       J(3, 10) = 1.0;
       J(4, 11) = 1.0;
       J(5, 12) = 1.0;
+      J(6, 0) = 1.0;  // to get to goal properly
+      J(7, 1) = 1.0;
+      J(8, 2) = 1.0;
+      // J(9, 3) = 1.0;
+      // J(10, 4) = 1.0;
+      // J(11, 5) = 1.0;
+      // J(12, 6) = 1.0;
     };
     err = solver.SetConstraint(
-        state_con, state_jac, 6, ConstraintType::EQUALITY, "State", N);
+        state_con, state_jac, 9, ConstraintType::EQUALITY, "State", N);
+
+    auto state_con_z = [](a_float* c, const a_float* x, const a_float* u) {
+      (void)u;
+      // Eigen::Map<const Vector> X(x, 13);
+      // Eigen::Map<Vector> C(c, 6);
+      // constrain velocity and angular velocity to 0
+      c[0] = -x[2];
+    };
+    auto state_jac_z = [](a_float* jac, const a_float* x, const a_float* u) {
+      (void)u;
+      Eigen::Map<Eigen::Matrix<a_float, 1, 17>> J(jac);
+      J.setZero();
+      J(0, 2) = -1.0;
+    };
+
+    err = solver.SetConstraint(state_con_z,
+                               state_jac_z,
+                               1,
+                               ConstraintType::INEQUALITY,
+                               "StateZ",
+                               AllIndices);
     err = solver.SetConstraint(actuator_con,
                                actuator_jac,
                                8,
@@ -258,6 +291,7 @@ class quadMPC {
         idx_end = N;
       }
       if (idx_end == index_so_far) {
+        ROS_ERROR("polytope cocntain no points");
         continue;
       }
       err = solver.SetConstraint(poly_con,
