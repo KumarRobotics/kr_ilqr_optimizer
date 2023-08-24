@@ -229,8 +229,7 @@ class quadMPC {
                                8,
                                ConstraintType::INEQUALITY,
                                "Actuator Min Max",
-                               0,
-                               N + 1);
+                               AllIndices);
 
     // int cur_poly_idx = 0;
     std::cout << "allots= " << allo_ts << std::endl;
@@ -254,6 +253,13 @@ class quadMPC {
         J.block(0, 0, n_con, 3) = h_poly.first;
       };
       uint idx_end = index_so_far + int(allo_ts[k] / dt);
+      if (idx_end > N) {
+        ROS_ERROR("idx_end > N");
+        idx_end = N;
+      }
+      if (idx_end == index_so_far) {
+        continue;
+      }
       err = solver.SetConstraint(poly_con,
                                  poly_jac,
                                  num_con,
