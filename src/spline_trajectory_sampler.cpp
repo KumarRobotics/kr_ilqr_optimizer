@@ -40,8 +40,8 @@ Eigen::Vector3d SplineTrajSampler::compute_ref_inputs(
     geometry_msgs::Point& moment,
     Eigen::Quaterniond& q_return,
     Eigen::Vector3d& initial_w) {
-  std::cout << "Computing ref inputs" << std::endl;
-  std::cout << mpc_solver->model_ptr->mass_ << std::endl;
+  // std::cout << "Computing ref inputs" << std::endl;
+  // std::cout << mpc_solver->model_ptr->mass_ << std::endl;
   Eigen::Matrix3d inertia_ = mpc_solver->model_ptr->moment_of_inertia_;
   double mass_ = mpc_solver->model_ptr->mass_;
   double g_ = 9.81;  // TODO: Bad place to define this
