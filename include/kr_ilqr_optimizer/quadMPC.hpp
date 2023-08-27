@@ -362,6 +362,19 @@ class quadMPC {
       // PrintErrorCode(err);
       // fmt::print("Print error\n");
       err = solver.SetState(x_ref_k.data(), n, k);
+      // Set Initial Trajectory
+      Eigen::Vector4d fm(4);  // Initialize a 4D Eigen vector
+      std::cout << "k = " << k << std::endl;
+      std::cout << "thrust[k] = " << thrust[k] << std::endl;
+      std::cout << "moment[k] = " << moment[k] << std::endl;
+
+      fm << thrust[k], moment[k];
+      Eigen::Vector4d reference_input = model_ptr->forceMatrix_inv() * fm;
+      std::cout << "reference_input = " << reference_input << std::endl;
+      // we can change to reference input if needed but it is not getting
+      // anywhere close to the goal, when there are obstacles it's even worse
+      // since some constraints are violated
+      err = solver.SetInput(u_ref_single.data(), m, k);
     }
     if (use_quaternion) {
       err = solver.SetQuaternionCost(
@@ -376,8 +389,6 @@ class quadMPC {
     // Initial State
     err = solver.SetInitialState(x0.data(), n);
 
-    // Set Initial Trajectory
-    err = solver.SetInput(u_ref_single.data(), m);
     // fmt::print("Set Input Finished!\n");
 
     solver.OpenLoopRollout();

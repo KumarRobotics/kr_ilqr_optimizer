@@ -101,12 +101,8 @@ class quadModel {
   float min_thrust_per_prop = 0;
   double kf_ = 1;
   double mass_ = 1.5;
-
- private:
-  ReferenceFrame reference_frame_;
-  double motor_dist_ = 0.4;
-  double km_ = 0.0245;
   Eigen::Matrix3d moment_of_inertia_ = Eigen::Matrix3d::Identity();
+  Eigen::Matrix4d forceMatrix_inv() const { return forceMatrix().inverse(); }
   Eigen::Matrix4d forceMatrix() const {
     double L = motor_dist_;
 
@@ -116,6 +112,11 @@ class quadModel {
 
     return SMatrix;
   }
+
+ private:
+  ReferenceFrame reference_frame_;
+  double motor_dist_ = 0.4;
+  double km_ = 0.0245;
 };
 
 class SimpleQuaternionModel {

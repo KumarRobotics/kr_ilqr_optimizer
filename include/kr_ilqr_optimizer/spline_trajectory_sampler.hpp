@@ -38,10 +38,9 @@ class SplineTrajSampler {
   ros::Publisher sampled_traj_pub_;
   ros::Publisher opt_traj_pub_;
   ros::Publisher opt_viz_pub_;
-  double g_ = 9.81;
-  double mass_ = 0.5;
-  Eigen::DiagonalMatrix<double, 3> inertia_ =
-      Eigen::DiagonalMatrix<double, 3>(0.0023, 0.0023, 0.004);
+  // double g_ = 9.81;
+  // double mass_ = mpc_solver->model_ptr->mass_;
+  // Eigen::Matrix3d inertia_ = mpc_solver->model_ptr->moment_of_inertia_;
 
  public:
   std::unique_ptr<quadMPC> mpc_solver;

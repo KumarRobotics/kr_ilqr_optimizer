@@ -30,7 +30,6 @@ std::pair<Eigen::MatrixXd, Eigen::VectorXd> pt_normal_to_halfspace(
 }
 
 Eigen::Vector3d SplineTrajSampler::compute_ref_inputs(
-
     Eigen::Vector3d pos,
     Eigen::Vector3d vel,
     Eigen::Vector3d acc,
@@ -41,6 +40,11 @@ Eigen::Vector3d SplineTrajSampler::compute_ref_inputs(
     geometry_msgs::Point& moment,
     Eigen::Quaterniond& q_return,
     Eigen::Vector3d& initial_w) {
+  std::cout << "Computing ref inputs" << std::endl;
+  std::cout << mpc_solver->model_ptr->mass_ << std::endl;
+  Eigen::Matrix3d inertia_ = mpc_solver->model_ptr->moment_of_inertia_;
+  double mass_ = mpc_solver->model_ptr->mass_;
+  double g_ = 9.81;  // TODO: Bad place to define this
   // Desired force vector.
   Eigen::Vector3d t = acc + Eigen::Vector3d(0, 0, g_);
   Eigen::Vector3d b3 = t.normalized();
@@ -63,7 +67,9 @@ Eigen::Vector3d SplineTrajSampler::compute_ref_inputs(
   Eigen::Matrix3d R = R_des;  // assume we have perfect tracking on rotation
 
   double dot_u1 = mass_ * b3.dot(jerk);
-  Eigen::Vector3d hw = mass_ / u1 * (jerk - dot_u1 * b3);
+  Eigen::Vector3d hw =
+      mass_ / u1 *
+      (jerk);  // removing  - dot_u1 * b3 since thomas' does not have it
   double p = -hw.dot(b2_des);
   double q = hw.dot(b1_des);
 
