@@ -105,7 +105,7 @@ Eigen::Vector3d SplineTrajSampler::compute_ref_inputs(
   //  double r = w_des.dot(b3_des);
   //  Eigen::Vector3d Omega(p, q, r);
 
-  // initial_w = Omega;
+  initial_w = Omega;
 
   // Eigen::Vector3d wwu1b3 = Omega.cross(Omega.cross(u1 * b3));
   // double ddot_u1 = b3.dot(mass_ * snap) - b3.dot(wwu1b3);
@@ -124,6 +124,7 @@ Eigen::Vector3d SplineTrajSampler::compute_ref_inputs(
 }
 
 kr_planning_msgs::TrajectoryDiscretized SplineTrajSampler::publish_altro(
+    const Eigen::VectorXd& start_state,
     std::vector<Eigen::Vector3d> pos,
     std::vector<Eigen::Vector3d> vel,
     std::vector<Eigen::Vector3d> acc,
@@ -140,7 +141,8 @@ kr_planning_msgs::TrajectoryDiscretized SplineTrajSampler::publish_altro(
   std::vector<Vector> U_sim;
   std::vector<double> t_sim;
   ROS_WARN("[iLQR Optimizer]: Solving");
-  uint solver_status = mpc_solver->solve_problem(pos,
+  uint solver_status = mpc_solver->solve_problem(start_state,
+                                                 pos,
                                                  vel,
                                                  acc,
                                                  yaw_ref,
@@ -165,36 +167,36 @@ kr_planning_msgs::TrajectoryDiscretized SplineTrajSampler::publish_altro(
   kr_planning_msgs::TrajectoryDiscretized traj;
   traj.header = header;  // TODO: ASK LAURA
   traj.header.stamp = ros::Time::now();
-  traj.N = N_sample_pts_;
-
-  for (int i = 0; i < N_sample_pts_; i++) {
+  traj.N = N_controls_ + 1;
+  geometry_msgs::Point pos_t;
+  geometry_msgs::Point vel_t;
+  geometry_msgs::Point acc_t;
+  geometry_msgs::Point moment_t;
+  Eigen::Vector3d moment_t_v = Eigen::Vector3d::Zero();
+  unpack(moment_t, moment_t_v);
+  // no state here, need to calc from force, stay at 0 for now
+  for (int i = 0; i <= N_controls_; i++) {
+    // deal with last index outside the loop
     // unpack points . THIS CODE IS SIMILAR TO NEXT SECTION FOR UNPACKING, write
     // a function!
-    geometry_msgs::Point pos_t;
-    geometry_msgs::Point vel_t;
-    geometry_msgs::Point
-        acc_t;  // no state here, need to calc from force, stay at 0 for now
-    geometry_msgs::Point
-        moment_t;  // no state here, need to calc from force, stay at 0 for now
     Eigen::Quaterniond q_unpack(
-        X_sim[i][3], X_sim[i][4], X_sim[i][5], X_sim[i][6]);
+        X_sim[i][3], X_sim[i][4], X_sim[i][5], X_sim[i][6]);  // not eigen quat
     Eigen::Vector3d a_body;
+    Eigen::Vector3d v_body;
+
     a_body << 0.0, 0.0,
         mpc_solver->model_ptr->kf_ * U_sim[i].sum() /
             mpc_solver->model_ptr->mass_;
-    // std::cout << "a_body = " << a_body << std::endl;
 
     auto a_world = (q_unpack * a_body) - Eigen::Vector3d(0, 0, 9.81);
     // std::cout << "a_world = " << a_world << std::endl;
     // std::cout << "a_world = " << a_world << std::endl;
 
-    Eigen::Vector3d v_body;
     v_body << X_sim[i][7], X_sim[i][8], X_sim[i][9];
     auto v_world = q_unpack * v_body;
 
     auto RPY = q_unpack.toRotationMatrix().eulerAngles(0, 1, 2);
-    unpack(pos_t, X_sim[i]);
-    // unpack(vel_t, X_sim[i], 7);  // x y z q1 q2 q3 q4 v1 v2 v3 w1 w2 w3
+    unpack(pos_t, X_sim[i]);  // x y z q1 q2 q3 q4 v1 v2 v3 w1 w2 w3
     unpack(vel_t, v_world);
     unpack(acc_t, a_world);
     // DEAL WITH VIZ
@@ -204,11 +206,18 @@ kr_planning_msgs::TrajectoryDiscretized SplineTrajSampler::publish_altro(
     traj.vel.push_back(vel_t);
     traj.acc.push_back(acc_t);
     traj.yaw.push_back(RPY[2]);
-    traj.thrust.push_back(U_sim[i].sum());
+    if (i != N_controls_) {
+      traj.thrust.push_back(U_sim[i].sum());
+    } else {
+      traj.thrust.push_back(U_sim[N_controls_ - 1].sum());
+    }
     traj.moment.push_back(moment_t);  // 0
     traj.t.push_back(t_sim[i]);       // start from 0
     // initial attitude and initial omega not used
   }
+
+  std::cout << "X_sim size = " << X_sim.size() << std::endl;
+  std::cout << "U_sim size = " << U_sim.size() << std::endl;
   // DEAL WITH VIZ
   if (publish_viz_) opt_viz_pub_.publish(viz_msg);
   // DEAL WITH Actual MSG
@@ -224,6 +233,7 @@ kr_planning_msgs::TrajectoryDiscretized SplineTrajSampler::publish_altro(
 // publish the discretized traj from passed in
 kr_planning_msgs::TrajectoryDiscretized
 SplineTrajSampler::sample_and_refine_trajectory(
+    const Eigen::VectorXd& start_state,
     const kr_planning_msgs::SplineTrajectory& traj,
     const std::vector<Eigen::MatrixXd>& hPolys,
     const Eigen::VectorXd& allo_ts) {
@@ -237,12 +247,12 @@ SplineTrajSampler::sample_and_refine_trajectory(
   double total_time = traj.data[0].t_total;
   time_limit_ = total_time;
   // double total_time = time_limit_;
-  std::vector<Eigen::Vector3d> pos = sample(traj, N_sample_pts_, 0);
-  std::vector<Eigen::Vector3d> vel = sample(traj, N_sample_pts_, 1);
-  std::vector<Eigen::Vector3d> acc = sample(traj, N_sample_pts_, 2);
-  std::vector<Eigen::Vector3d> jerk = sample(traj, N_sample_pts_, 3);
-  std::vector<Eigen::Vector3d> snap = sample(traj, N_sample_pts_, 4);
-  double dt = total_time / N_sample_pts_;
+  std::vector<Eigen::Vector3d> pos = sample(traj, N_controls_, 0);
+  std::vector<Eigen::Vector3d> vel = sample(traj, N_controls_, 1);
+  std::vector<Eigen::Vector3d> acc = sample(traj, N_controls_, 2);
+  std::vector<Eigen::Vector3d> jerk = sample(traj, N_controls_, 3);
+  std::vector<Eigen::Vector3d> snap = sample(traj, N_controls_, 4);
+  double dt = total_time / N_controls_;
   ROS_WARN("[iLQR]: Sample Done");
 
   kr_planning_msgs::TrajectoryDiscretized traj_discretized;
@@ -254,13 +264,13 @@ SplineTrajSampler::sample_and_refine_trajectory(
   Eigen::Vector3d w_return;
   geometry_msgs::Quaternion ini_q_msg;
   geometry_msgs::Point ini_w_msg;
-  std::vector<double> yaw_ref(N_sample_pts_);
-  std::vector<double> thrust_ref(N_sample_pts_);
-  std::vector<Eigen::Vector3d> moment_ref(N_sample_pts_);
-  std::vector<Eigen::Quaterniond> q_ref(N_sample_pts_);
-  std::vector<Eigen::Vector3d> w_ref(N_sample_pts_);
+  std::vector<double> yaw_ref(N_controls_);
+  std::vector<double> thrust_ref(N_controls_);
+  std::vector<Eigen::Vector3d> moment_ref(N_controls_);
+  std::vector<Eigen::Quaterniond> q_ref(N_controls_);
+  std::vector<Eigen::Vector3d> w_ref(N_controls_);
 
-  for (int i = 0; i < N_sample_pts_; i++) {
+  for (int i = 0; i < N_controls_; i++) {
     geometry_msgs::Point pos_t;
     geometry_msgs::Point vel_t;
     geometry_msgs::Point acc_t;
@@ -326,16 +336,17 @@ SplineTrajSampler::sample_and_refine_trajectory(
     // compute the total snap at 100 points
   }
 
-  std::vector<double> t = linspace(0.0, total_time, N_sample_pts_);
+  std::vector<double> t = linspace(0.0, total_time, N_controls_);
   traj_discretized.t = t;
-  traj_discretized.N = N_sample_pts_;
+  traj_discretized.N = N_controls_;
   traj_discretized.inital_attitude = ini_q_msg;
   traj_discretized.initial_omega = ini_w_msg;
 
   ROS_WARN("[iLQR]: Sampling Finished");
 
   if (compute_altro_)
-    traj_discretized = publish_altro(pos,
+    traj_discretized = publish_altro(start_state,
+                                     pos,
                                      vel,
                                      acc,
                                      yaw_ref,

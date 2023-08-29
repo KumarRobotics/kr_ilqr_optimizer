@@ -22,7 +22,7 @@
 
 class SplineTrajSampler {
  protected:
-  int N_sample_pts_ = 80;
+  int N_controls_ = 80;
   double time_limit_ = 8;
 
   bool compute_altro_ = true;
@@ -50,14 +50,13 @@ class SplineTrajSampler {
   SplineTrajSampler(bool subscribe_to_traj_,
                     bool publish_optimized_traj_,
                     bool publish_viz_,
-                    int N_sample_pts_)
+                    int N_controls_)
       : subscribe_to_traj_(subscribe_to_traj_),
         publish_optimized_traj_(publish_optimized_traj_),
         publish_viz_(publish_viz_),
-        N_sample_pts_(N_sample_pts_) {
+        N_controls_(N_controls_) {
     bool use_quat = true;
-    mpc_solver =
-        std::make_unique<quadMPC>(N_sample_pts_, time_limit_, use_quat);
+    mpc_solver = std::make_unique<quadMPC>(N_controls_, time_limit_, use_quat);
     ros::NodeHandle n;
     if (publish_optimized_traj_) {
       opt_traj_pub_ = n.advertise<kr_planning_msgs::TrajectoryDiscretized>(
@@ -94,12 +93,14 @@ class SplineTrajSampler {
   void callbackWrapper(const kr_planning_msgs::SplineTrajectory::ConstPtr& msg);
 
   kr_planning_msgs::TrajectoryDiscretized sample_and_refine_trajectory(
+      const Eigen::VectorXd& start_state,
       const kr_planning_msgs::SplineTrajectory& traj,
       const std::vector<Eigen::MatrixXd>& hPolys,
       const Eigen::VectorXd& allo_ts);
 
  private:
   kr_planning_msgs::TrajectoryDiscretized publish_altro(
+      const Eigen::VectorXd& start_state,
       std::vector<Eigen::Vector3d> pos,
       std::vector<Eigen::Vector3d> vel,
       std::vector<Eigen::Vector3d> acc,

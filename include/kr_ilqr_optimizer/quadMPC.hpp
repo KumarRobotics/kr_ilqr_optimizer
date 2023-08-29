@@ -61,6 +61,7 @@ class quadMPC {
 
  public:
   uint solve_problem(
+      const Eigen::VectorXd& start_state,
       std::vector<Eigen::Vector3d> pos,
       std::vector<Eigen::Vector3d> vel,
       std::vector<Eigen::Vector3d> acc,
@@ -318,8 +319,10 @@ class quadMPC {
     Eigen::Matrix<double, n_const, 1> x0;
     // x0 << 2.0, 1.0, -1.0,   -0.752,  0.443,  0.443, -0.206,  0.5,-0.5,1.0,
     // 0.8,0.8,0.8;
-    q_ref[0].normalize();
-    x0 << pos[0], q_ref[0].w(), q_ref[0].vec(), vel[0], w_ref[0];
+    Eigen::AngleAxisd yawAngle(start_state[6], Eigen::Vector3d::UnitZ());
+    Eigen::Quaterniond q0(yawAngle);
+    x0 << start_state.segment<3>(0), q0.w(), q0.vec(),
+        start_state.segment<3>(3), 0, 0, 0;
     // x0 << 2.0, 1.0, -1.0,  1.0,  0,   0, 0,  0.5,-0.5,0, 0.,0.,0.;
 
     // Eigen::Matrix<double, n_const, 1> xf;
@@ -406,7 +409,7 @@ class quadMPC {
     // std::vector<Vector> U_sim;
     // std::vector<float> t_sim;
     float t_now = 0;
-    for (int k = 0; k <= N; k++) {
+    for (int k = 0; k <= N; k++) {  // should be of size N + 1
       Eigen::VectorXd x(n);
       solver.GetState(x.data(), k);
       X_sim.emplace_back(x);
