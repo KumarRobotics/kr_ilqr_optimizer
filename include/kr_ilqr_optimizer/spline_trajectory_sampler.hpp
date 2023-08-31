@@ -46,6 +46,9 @@ class SplineTrajSampler {
   std::unique_ptr<quadMPC> mpc_solver;
 
   using Ptr = std::unique_ptr<SplineTrajSampler>;
+  
+  std::vector<Eigen::VectorXd> opt_traj_;  // empty if no solution yet
+
 
   SplineTrajSampler(bool subscribe_to_traj_,
                     bool publish_optimized_traj_,

@@ -174,6 +174,7 @@ kr_planning_msgs::TrajectoryDiscretized SplineTrajSampler::publish_altro(
   geometry_msgs::Point moment_t;
   Eigen::Vector3d moment_t_v = Eigen::Vector3d::Zero();
   unpack(moment_t, moment_t_v);
+  opt_traj_.clear();
   // no state here, need to calc from force, stay at 0 for now
   for (int i = 0; i <= N_controls_; i++) {
     // deal with last index outside the loop
@@ -199,6 +200,9 @@ kr_planning_msgs::TrajectoryDiscretized SplineTrajSampler::publish_altro(
     unpack(pos_t, X_sim[i]);  // x y z q1 q2 q3 q4 v1 v2 v3 w1 w2 w3
     unpack(vel_t, v_world);
     unpack(acc_t, a_world);
+    Eigen::VectorXd pva_temp(9);
+    pva_temp << X_sim[i].segment<3>(0), v_world, a_world;
+    opt_traj_.push_back(pva_temp);
     // DEAL WITH VIZ
     viz_msg.points.push_back(pos_t);
     // DEAL WITH Actual MSG
@@ -208,7 +212,7 @@ kr_planning_msgs::TrajectoryDiscretized SplineTrajSampler::publish_altro(
     traj.yaw.push_back(RPY[2]);
     if (i != N_controls_) {
       traj.thrust.push_back(U_sim[i].sum());
-    } else {
+    } else {  // for last index just use the same control
       traj.thrust.push_back(U_sim[N_controls_ - 1].sum());
     }
     traj.moment.push_back(moment_t);  // 0
@@ -336,6 +340,7 @@ SplineTrajSampler::sample_and_refine_trajectory(
     // compute the total snap at 100 points
   }
 
+  // this is input t, has one less element since you need ref everywhere
   std::vector<double> t = linspace(0.0, total_time, N_controls_);
   traj_discretized.t = t;
   traj_discretized.N = N_controls_;
