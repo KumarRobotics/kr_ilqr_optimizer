@@ -177,6 +177,10 @@ class SplineTrajSampler {
         for (int d = 0; d < deriv_num; d++) {
           poly_coeffs = differentiate(poly_coeffs, poly.dt);
         }
+        if (poly_coeffs.size() == 0) {
+          result(dim) = 0;
+          break;
+        }
         result(dim) = poly_coeffs[0];
 
         if (t < time_elapsed + poly.dt || poly == spline.segs.back()) {
