@@ -25,18 +25,16 @@ using Eigen::VectorXi;
 
 class quadMPC {
  public:
-  quadMPC(int N, double t_ref_, bool use_quaternion)
-      : N(N), t_ref_(t_ref_), solver(N) {}
+  quadMPC(int N_ctrl, bool use_quaternion) : N_ctrl_(N_ctrl), solver(N_ctrl) {}
   void SetUp() {
     model_ptr = std::make_shared<const quadModel>();
     // Objective
-    std::cout << "Size of Problem N = " << N << std::endl;
+    std::cout << "Size of Problem N_ctrl = " << N_ctrl_ << std::endl;
   }
   std::shared_ptr<const quadModel> model_ptr;
 
  protected:
-  int N;
-  double t_ref_;
+  int N_ctrl_;
 
   const int n = quadModel::NumStates;
   const int m = quadModel::NumInputs;
@@ -76,7 +74,7 @@ class quadMPC {
       std::vector<Vector>& X_sim,
       std::vector<Vector>& U_sim,
       std::vector<double>& t_sim) {
-    solver = ALTROSolver(N);
+    solver = ALTROSolver(N_ctrl_);
     Qd = Vector::Constant(n, 0);
     Rd = Vector::Constant(m, 0.1);
     Qdf = Vector::Constant(n, 0);
@@ -113,29 +111,20 @@ class quadMPC {
     err = solver.SetExplicitDynamics(dyn, jac);
 
     // Read Reference Trajectory
-    int N_ref = N;
-    float t_ref = t_ref_;
+    int N_state = N_ctrl_ + 1;
+    // float t_total = t_total_;
 
     u_ref_single = Vector::Constant(m, model_ptr->get_hover_input());
     std::cout << "u_ref_single = " << u_ref_single << std::endl;
-    // u_ref_single[0] = -1;
-    // ReadScottyTrajectory(&N_ref, &t_ref, &x_ref, &u_ref); // this is where we
-    // should input the dispersion planner data
-
-    // a_float * Qd_data = this->Qd.data();
-    // std::cout << "Qd = " << Qd_data[0] << std::endl;
-    // std::cout << "N_ref" << N_ref << std::endl;
 
     // Set time step equal to the reference trajectory
-    h = t_ref / static_cast<double>(N_ref);
-    printf("h = %f\n", h);
-    err = solver.SetTimeStep(h);
+    printf("h = %f\n", dt);
+    err = solver.SetTimeStep(dt);
 
     Eigen::Matrix<double, 13, 1> xf;
     xf << pos.back(), 1.0, 0.0, 0.0, 0.0, 0, 0, 0, 0, 0, 0;
     // Suprise ! Specifying COST FUNCTION TWICE is useful!!
-    for (int k = 0; k <= N - 1; ++k) {
-      // std::cout << k << std::endl;
+    for (int k = 0; k < N_ctrl_; ++k) {
       if (use_quaternion) {
         err = solver.SetQuaternionCost(
             n, m, Qd.data(), Rd.data(), 1.0, xf.data(), u_ref_single.data(), k);
@@ -143,16 +132,26 @@ class quadMPC {
         err = solver.SetLQRCost(
             n, m, Qd.data(), Rd.data(), xf.data(), u_ref_single.data(), k);
       }
-      // fmt::print("Print error\n");
     }
-    // err = solver.SetLQRCost(n, m, Qdf.data(), Rd.data(), xf.data(),
-    // u_ref_single.data(), N);
+    // Set FINAL Cost
     if (use_quaternion) {
       err = solver.SetQuaternionCost(
-          n, m, Qdf.data(), Rd.data(), 1.0, xf.data(), u_ref_single.data(), N);
+          n,
+          m,
+          Qdf.data(),
+          Rd.data(),
+          1.0,
+          xf.data(),
+          u_ref_single.data(),
+          N_state - 1);  // Set it for N_state, but index -1
     } else {
-      err = solver.SetLQRCost(
-          n, m, Qdf.data(), Rd.data(), xf.data(), u_ref_single.data(), N);
+      err = solver.SetLQRCost(n,
+                              m,
+                              Qdf.data(),
+                              Rd.data(),
+                              xf.data(),
+                              u_ref_single.data(),
+                              N_state - 1);
     }
     // err = solver.SetQuaternionCost(n, m, Qdf.data(), Rd.data(), 1.0,
     // xf.data(), u_ref_single.data(),N);
@@ -231,8 +230,12 @@ class quadMPC {
       // J(7, 1) = 1.0;
       // J(8, 2) = 1.0;
     };
-    err = solver.SetConstraint(
-        state_con, state_jac, 6, ConstraintType::EQUALITY, "State", N);
+    err = solver.SetConstraint(state_con,
+                               state_jac,
+                               6,
+                               ConstraintType::EQUALITY,
+                               "State",
+                               N_state - 1);
 
     auto state_con_z = [](a_float* c, const a_float* x, const a_float* u) {
       (void)u;
@@ -263,7 +266,9 @@ class quadMPC {
 
     // int cur_poly_idx = 0;
     std::cout << "allots= " << allo_ts << std::endl;
+    std::cout << "dt" << dt << std::endl;
     uint index_so_far = 0;
+    double time_so_far = 0.0;
     for (int k = 0; k < h_polys.size(); k++) {
       auto h_poly = h_polys[k];
       const int num_con = h_poly.second.rows();
@@ -282,25 +287,28 @@ class quadMPC {
         J.setZero();
         J.block(0, 0, n_con, 3) = h_poly.first;
       };
-      uint idx_end = index_so_far + int(allo_ts[k] / dt);
-      if (idx_end > N) {
-        ROS_ERROR("idx_end > N");
-        idx_end = N;
+      double time_end = time_so_far + allo_ts[k];
+      uint idx_end = int(time_end / dt);
+      if (idx_end > N_state) {
+        ROS_ERROR_STREAM("idx_end = " << idx_end << " > N_state");
+        idx_end = N_state;
       }
       if (idx_end == index_so_far) {
         ROS_ERROR("polytope cocntain no points");
-        continue;
+      } else {
+        err = solver.SetConstraint(poly_con,
+                                   poly_jac,
+                                   num_con,
+                                   ConstraintType::INEQUALITY,
+                                   "polytope",
+                                   index_so_far,
+                                   idx_end);
       }
-      err = solver.SetConstraint(poly_con,
-                                 poly_jac,
-                                 num_con,
-                                 ConstraintType::INEQUALITY,
-                                 "polytope",
-                                 index_so_far,
-                                 idx_end);
       std::cout << "k= " << k << " startidx = " << index_so_far
-                << " endidx = " << idx_end << std::endl;
+                << " endidx = " << idx_end << " time_end = " << time_end
+                << std::endl;
       index_so_far = idx_end;
+      time_so_far = time_end;
     }
     // auto poly_con = [h_polys](a_float* c, const a_float* x, const a_float* u)
     // {
@@ -335,7 +343,7 @@ class quadMPC {
     // std::cout << "x0 = " << x0 << std::endl;
     // std::cout << "xf = " << xf << std::endl;
     // Set Tracking Cost Function
-    for (int k = 0; k <= N - 1; ++k) {
+    for (int k = 0; k < N_ctrl_; ++k) {
       Eigen::Matrix<double, 13, 1> x_ref_k;
       // std::cout<< "ref k = " << k << std::endl;
       // std::cout<< "pos[k] = " << pos[k] << std::endl;
@@ -375,15 +383,27 @@ class quadMPC {
       // since some constraints are violated
       err = solver.SetInput(u_ref_single.data(), m, k);
     }
+    // Set Final COST!!
     if (use_quaternion) {
-      err = solver.SetQuaternionCost(
-          n, m, Qdf.data(), Rd.data(), 1.0, xf.data(), u_ref_single.data(), N);
+      err = solver.SetQuaternionCost(n,
+                                     m,
+                                     Qdf.data(),
+                                     Rd.data(),
+                                     1.0,
+                                     xf.data(),
+                                     u_ref_single.data(),
+                                     N_state - 1);
     } else {
-      err = solver.SetLQRCost(
-          n, m, Qdf.data(), Rd.data(), xf.data(), u_ref_single.data(), N);
+      err = solver.SetLQRCost(n,
+                              m,
+                              Qdf.data(),
+                              Rd.data(),
+                              xf.data(),
+                              u_ref_single.data(),
+                              N_state - 1);
     }
     //
-    err = solver.SetState(xf.data(), n, N);
+    err = solver.SetState(xf.data(), n, N_state - 1);
 
     // Initial State
     err = solver.SetInitialState(x0.data(), n);
@@ -409,13 +429,13 @@ class quadMPC {
     // std::vector<Vector> U_sim;
     // std::vector<float> t_sim;
     float t_now = 0;
-    for (int k = 0; k <= N; k++) {  // should be of size N + 1
+    for (int k = 0; k < N_state; k++) {  // should be of size N + 1
       Eigen::VectorXd x(n);
       solver.GetState(x.data(), k);
       X_sim.emplace_back(x);
       t_sim.emplace_back(t_now);
       t_now += solver.GetTimeStep(k);
-      if (k != N) {
+      if (k != N_state - 1) {
         Eigen::VectorXd u(m);
         solver.GetInput(u.data(), k);
         U_sim.emplace_back(u);

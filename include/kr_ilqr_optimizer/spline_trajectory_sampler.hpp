@@ -23,7 +23,6 @@
 class SplineTrajSampler {
  protected:
   int N_controls_ = 80;
-  double time_limit_ = 8;
 
   bool compute_altro_ = true;
   bool write_summary_to_file_ = false;
@@ -46,9 +45,8 @@ class SplineTrajSampler {
   std::unique_ptr<quadMPC> mpc_solver;
 
   using Ptr = std::unique_ptr<SplineTrajSampler>;
-  
-  std::vector<Eigen::VectorXd> opt_traj_;  // empty if no solution yet
 
+  std::vector<Eigen::VectorXd> opt_traj_;  // empty if no solution yet
 
   SplineTrajSampler(bool subscribe_to_traj_,
                     bool publish_optimized_traj_,
@@ -59,7 +57,7 @@ class SplineTrajSampler {
         publish_viz_(publish_viz_),
         N_controls_(N_controls_) {
     bool use_quat = true;
-    mpc_solver = std::make_unique<quadMPC>(N_controls_, time_limit_, use_quat);
+    mpc_solver = std::make_unique<quadMPC>(N_controls_, use_quat);
     ros::NodeHandle n;
     if (publish_optimized_traj_) {
       opt_traj_pub_ = n.advertise<kr_planning_msgs::TrajectoryDiscretized>(
@@ -116,16 +114,16 @@ class SplineTrajSampler {
       const std::vector<std::pair<Eigen::MatrixXd, Eigen::VectorXd>>& h_polys,
       const Eigen::VectorXd& allo_ts,
       std_msgs::Header header);
-  Eigen::Vector3d compute_ref_inputs(Eigen::Vector3d pos,
-                                     Eigen::Vector3d vel,
-                                     Eigen::Vector3d acc,
-                                     Eigen::Vector3d jerk,
-                                     Eigen::Vector3d snap,
-                                     Eigen::Vector3d yaw_dyaw_ddyaw,
+  Eigen::Vector3d compute_ref_inputs(const Eigen::Vector3d& pos,
+                                     const Eigen::Vector3d& vel,
+                                     const Eigen::Vector3d& acc,
+                                     const Eigen::Vector3d& jerk,
+                                     const Eigen::Vector3d& snap,
+                                     const Eigen::Vector3d& yaw_dyaw_ddyaw,
                                      double& thrust,
                                      geometry_msgs::Point& moment,
                                      Eigen::Quaterniond& q_return,
-                                     Eigen::Vector3d& initial_w);
+                                     Eigen::Vector3d& omega);
 
   void unpack(geometry_msgs::Point& p,
               const Eigen::VectorXd& v,
@@ -195,14 +193,14 @@ class SplineTrajSampler {
   }
 
   std::vector<Eigen::Vector3d> sample(
-      const kr_planning_msgs::SplineTrajectory& msg, int N, int deriv_num) {
-    std::vector<Eigen::Vector3d> ps(N + 1);
-    // std::cout<<"total_time: "<<total_time<<std::endl;
-    // if (total_time > time_limit_) total_time = time_limit_; //for a max of 6
-    // seconds, too long make ilqr sovler fail
-    double dt = time_limit_ / N;
-    for (int i = 0; i <= N; i++) ps.at(i) = evaluate(msg, i * dt, deriv_num);
-
+      const kr_planning_msgs::SplineTrajectory& msg,
+      double total_time,
+      int N_state,
+      int deriv_num) {
+    std::vector<Eigen::Vector3d> ps(N_state);  // 101
+    double dt = total_time / (N_state - 1);    // dt = 1 / 100 = 0.01
+    for (int i = 0; i < N_state; i++)          // 0, 1, 2, ..., 100 * 0.01 = 1
+      ps.at(i) = evaluate(msg, i * dt, deriv_num);
     return ps;
   }
 };

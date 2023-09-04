@@ -30,16 +30,16 @@ std::pair<Eigen::MatrixXd, Eigen::VectorXd> pt_normal_to_halfspace(
 }
 
 Eigen::Vector3d SplineTrajSampler::compute_ref_inputs(
-    Eigen::Vector3d pos,
-    Eigen::Vector3d vel,
-    Eigen::Vector3d acc,
-    Eigen::Vector3d jerk,
-    Eigen::Vector3d snap,
-    Eigen::Vector3d yaw_dyaw_ddyaw,
+    const Eigen::Vector3d& pos,
+    const Eigen::Vector3d& vel,
+    const Eigen::Vector3d& acc,
+    const Eigen::Vector3d& jerk,
+    const Eigen::Vector3d& snap,
+    const Eigen::Vector3d& yaw_dyaw_ddyaw,
     double& thrust,
     geometry_msgs::Point& moment,
     Eigen::Quaterniond& q_return,
-    Eigen::Vector3d& initial_w) {
+    Eigen::Vector3d& omega) {
   // std::cout << "Computing ref inputs" << std::endl;
   // std::cout << mpc_solver->model_ptr->mass_ << std::endl;
   Eigen::Matrix3d inertia_ = mpc_solver->model_ptr->moment_of_inertia_;
@@ -105,7 +105,7 @@ Eigen::Vector3d SplineTrajSampler::compute_ref_inputs(
   //  double r = w_des.dot(b3_des);
   //  Eigen::Vector3d Omega(p, q, r);
 
-  initial_w = Omega;
+  omega = Omega;
 
   // Eigen::Vector3d wwu1b3 = Omega.cross(Omega.cross(u1 * b3));
   // double ddot_u1 = b3.dot(mass_ * snap) - b3.dot(wwu1b3);
@@ -137,9 +137,9 @@ kr_planning_msgs::TrajectoryDiscretized SplineTrajSampler::publish_altro(
     const std::vector<std::pair<Eigen::MatrixXd, Eigen::VectorXd>>& h_polys,
     const Eigen::VectorXd& allo_ts,
     std_msgs::Header header) {
-  std::vector<Vector> X_sim;
-  std::vector<Vector> U_sim;
-  std::vector<double> t_sim;
+  std::vector<Vector> X_sim;  // for return
+  std::vector<Vector> U_sim;  // for return
+  std::vector<double> t_sim;  // for return
   ROS_WARN("[iLQR Optimizer]: Solving");
   uint solver_status = mpc_solver->solve_problem(start_state,
                                                  pos,
@@ -167,16 +167,17 @@ kr_planning_msgs::TrajectoryDiscretized SplineTrajSampler::publish_altro(
   kr_planning_msgs::TrajectoryDiscretized traj;
   traj.header = header;  // TODO: ASK LAURA
   traj.header.stamp = ros::Time::now();
-  traj.N = N_controls_ + 1;
+  traj.N_ctrl = N_controls_;
   geometry_msgs::Point pos_t;
   geometry_msgs::Point vel_t;
   geometry_msgs::Point acc_t;
   geometry_msgs::Point moment_t;
-  Eigen::Vector3d moment_t_v = Eigen::Vector3d::Zero();
+  Eigen::Vector3d moment_t_v =
+      Eigen::Vector3d::Zero();  // TODO:(Yifei) return proper moment
   unpack(moment_t, moment_t_v);
   opt_traj_.clear();
   // no state here, need to calc from force, stay at 0 for now
-  for (int i = 0; i <= N_controls_; i++) {
+  for (int i = 0; i < N_controls_ + 1; i++) {
     // deal with last index outside the loop
     // unpack points . THIS CODE IS SIMILAR TO NEXT SECTION FOR UNPACKING, write
     // a function!
@@ -212,16 +213,11 @@ kr_planning_msgs::TrajectoryDiscretized SplineTrajSampler::publish_altro(
     traj.yaw.push_back(RPY[2]);
     if (i != N_controls_) {
       traj.thrust.push_back(U_sim[i].sum());
-    } else {  // for last index just use the same control
-      traj.thrust.push_back(U_sim[N_controls_ - 1].sum());
+      traj.moment.push_back(moment_t);  // 0
     }
-    traj.moment.push_back(moment_t);  // 0
-    traj.t.push_back(t_sim[i]);       // start from 0
+    traj.dt = dt;
     // initial attitude and initial omega not used
   }
-
-  std::cout << "X_sim size = " << X_sim.size() << std::endl;
-  std::cout << "U_sim size = " << U_sim.size() << std::endl;
   // DEAL WITH VIZ
   if (publish_viz_) opt_viz_pub_.publish(viz_msg);
   // DEAL WITH Actual MSG
@@ -249,13 +245,14 @@ SplineTrajSampler::sample_and_refine_trajectory(
   ROS_WARN("[iLQR]: msg Converted");
 
   double total_time = traj.data[0].t_total;
-  time_limit_ = total_time;
-  // double total_time = time_limit_;
-  std::vector<Eigen::Vector3d> pos = sample(traj, N_controls_, 0);
-  std::vector<Eigen::Vector3d> vel = sample(traj, N_controls_, 1);
-  std::vector<Eigen::Vector3d> acc = sample(traj, N_controls_, 2);
-  std::vector<Eigen::Vector3d> jerk = sample(traj, N_controls_, 3);
-  std::vector<Eigen::Vector3d> snap = sample(traj, N_controls_, 4);
+  int N_state = N_controls_ + 1;
+  std::vector<Eigen::Vector3d> pos = sample(traj, total_time, N_state, 0);
+  std::vector<Eigen::Vector3d> vel = sample(traj, total_time, N_state, 1);
+  std::vector<Eigen::Vector3d> acc = sample(traj, total_time, N_state, 2);
+  std::vector<Eigen::Vector3d> jerk = sample(traj, total_time, N_state, 3);
+  std::vector<Eigen::Vector3d> snap = sample(traj, total_time, N_state, 4);
+  ROS_INFO_STREAM("[iLQR]: Sampled " << pos.size() << " points"
+                                     << "total time = " << total_time);
   double dt = total_time / N_controls_;
   ROS_WARN("[iLQR]: Sample Done");
 
@@ -268,23 +265,22 @@ SplineTrajSampler::sample_and_refine_trajectory(
   Eigen::Vector3d w_return;
   geometry_msgs::Quaternion ini_q_msg;
   geometry_msgs::Point ini_w_msg;
-  std::vector<double> yaw_ref(N_controls_);
-  std::vector<double> thrust_ref(N_controls_);
-  std::vector<Eigen::Vector3d> moment_ref(N_controls_);
-  std::vector<Eigen::Quaterniond> q_ref(N_controls_);
-  std::vector<Eigen::Vector3d> w_ref(N_controls_);
+  std::vector<double> yaw_ref(N_state);
+  std::vector<double> thrust_ref(N_state);
+  std::vector<Eigen::Vector3d> moment_ref(N_state);
+  std::vector<Eigen::Quaterniond> q_ref(N_state);
+  std::vector<Eigen::Vector3d> w_ref(N_state);
+  geometry_msgs::Point pos_t;
+  geometry_msgs::Point vel_t;
+  geometry_msgs::Point acc_t;
+  geometry_msgs::Point jerk_t;
+  geometry_msgs::Point snap_t;
+  double thrust;                // for return
+  geometry_msgs::Point moment;  // for return
 
-  for (int i = 0; i < N_controls_; i++) {
-    geometry_msgs::Point pos_t;
-    geometry_msgs::Point vel_t;
-    geometry_msgs::Point acc_t;
-    geometry_msgs::Point jerk_t;
-    geometry_msgs::Point snap_t;
-
-    double thrust;
-    geometry_msgs::Point moment;
-
-    Eigen::Vector3d yaw_three_der = Eigen::Vector3d(0, 0, 0);
+  for (int i = 0; i < N_state; i++) {
+    Eigen::Vector3d yaw_three_der =
+        Eigen::Vector3d(0, 0, 0);  // TODO: Assign from traj
     yaw_ref[i] = yaw_three_der[0];
     Eigen::Vector3d M = compute_ref_inputs(pos[i],
                                            vel[i],
@@ -307,28 +303,25 @@ SplineTrajSampler::sample_and_refine_trajectory(
     q_ref[i] = q_return;
     w_ref[i] = w_return;
 
-    jerk_abs_sum += acc[i].squaredNorm() * dt;
-    total_ref_F += abs(thrust) * dt;
-    total_ref_M += M.norm() * dt;
+    if (i != N_state - 1) {
+      jerk_abs_sum += acc[i].squaredNorm() * dt;
+      total_ref_F += abs(thrust) * dt;
+      total_ref_M += M.norm() * dt;
+
+      traj_discretized.thrust.push_back(thrust);
+      traj_discretized.moment.push_back(moment);
+    }
 
     unpack(pos_t, pos[i]);
     unpack(vel_t, vel[i]);
     unpack(acc_t, acc[i]);
-    // unpack(jerk_t, jerk[i]);
-    // unpack(snap_t, snap[i]);
-
-    // Assuming the Eigen vector contains 3D points (x, y, z)
 
     traj_discretized.pos.push_back(pos_t);
     traj_discretized.vel.push_back(vel_t);
     traj_discretized.acc.push_back(acc_t);
-    // traj_discretized.jerk.push_back(jerk_t);
-    // traj_discretized.snap.push_back(snap_t);
-    traj_discretized.thrust.push_back(thrust);
-    traj_discretized.moment.push_back(moment);
-
-    // std::cout << thrust << std::endl;
+    traj_discretized.yaw.push_back(yaw_ref[i]);
   }
+
   if (write_summary_to_file_) {
     // get start location as key to which ones successed
     poly_array_file << std::to_string(N_iter_) + ", " +
@@ -341,9 +334,9 @@ SplineTrajSampler::sample_and_refine_trajectory(
   }
 
   // this is input t, has one less element since you need ref everywhere
-  std::vector<double> t = linspace(0.0, total_time, N_controls_);
-  traj_discretized.t = t;
-  traj_discretized.N = N_controls_;
+  // std::vector<double> t = linspace(0.0, total_time, N_controls_ + 1);
+  traj_discretized.dt = dt;
+  traj_discretized.N_ctrl = N_controls_;
   traj_discretized.inital_attitude = ini_q_msg;
   traj_discretized.initial_omega = ini_w_msg;
 
