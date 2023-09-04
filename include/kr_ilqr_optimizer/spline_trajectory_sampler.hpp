@@ -22,7 +22,7 @@
 
 class SplineTrajSampler {
  protected:
-  int N_controls_ = 80;
+  double dt_ = 1.0;
 
   bool compute_altro_ = true;
   bool write_summary_to_file_ = false;
@@ -32,7 +32,6 @@ class SplineTrajSampler {
 
   uint N_iter_ = 0;
   std::ofstream poly_array_file;
-
   ros::Subscriber sub_;
   ros::Publisher sampled_traj_pub_;
   ros::Publisher opt_traj_pub_;
@@ -51,13 +50,13 @@ class SplineTrajSampler {
   SplineTrajSampler(bool subscribe_to_traj_,
                     bool publish_optimized_traj_,
                     bool publish_viz_,
-                    int N_controls_)
+                    double dt)
       : subscribe_to_traj_(subscribe_to_traj_),
         publish_optimized_traj_(publish_optimized_traj_),
         publish_viz_(publish_viz_),
-        N_controls_(N_controls_) {
+        dt_(dt) {
     bool use_quat = true;
-    mpc_solver = std::make_unique<quadMPC>(N_controls_, use_quat);
+    mpc_solver = std::make_unique<quadMPC>(dt, use_quat);
     ros::NodeHandle n;
     if (publish_optimized_traj_) {
       opt_traj_pub_ = n.advertise<kr_planning_msgs::TrajectoryDiscretized>(

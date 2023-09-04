@@ -141,6 +141,7 @@ kr_planning_msgs::TrajectoryDiscretized SplineTrajSampler::publish_altro(
   std::vector<Vector> U_sim;  // for return
   std::vector<double> t_sim;  // for return
   ROS_WARN("[iLQR Optimizer]: Solving");
+  int N_controls = pos.size() - 1;
   uint solver_status = mpc_solver->solve_problem(start_state,
                                                  pos,
                                                  vel,
@@ -167,7 +168,7 @@ kr_planning_msgs::TrajectoryDiscretized SplineTrajSampler::publish_altro(
   kr_planning_msgs::TrajectoryDiscretized traj;
   traj.header = header;  // TODO: ASK LAURA
   traj.header.stamp = ros::Time::now();
-  traj.N_ctrl = N_controls_;
+  traj.N_ctrl = N_controls;
   geometry_msgs::Point pos_t;
   geometry_msgs::Point vel_t;
   geometry_msgs::Point acc_t;
@@ -177,7 +178,7 @@ kr_planning_msgs::TrajectoryDiscretized SplineTrajSampler::publish_altro(
   unpack(moment_t, moment_t_v);
   opt_traj_.clear();
   // no state here, need to calc from force, stay at 0 for now
-  for (int i = 0; i < N_controls_ + 1; i++) {
+  for (int i = 0; i < N_controls + 1; i++) {
     // deal with last index outside the loop
     // unpack points . THIS CODE IS SIMILAR TO NEXT SECTION FOR UNPACKING, write
     // a function!
@@ -211,7 +212,7 @@ kr_planning_msgs::TrajectoryDiscretized SplineTrajSampler::publish_altro(
     traj.vel.push_back(vel_t);
     traj.acc.push_back(acc_t);
     traj.yaw.push_back(RPY[2]);
-    if (i != N_controls_) {
+    if (i != N_controls) {
       traj.thrust.push_back(U_sim[i].sum());
       traj.moment.push_back(moment_t);  // 0
     }
@@ -245,7 +246,8 @@ SplineTrajSampler::sample_and_refine_trajectory(
   ROS_WARN("[iLQR]: msg Converted");
 
   double total_time = traj.data[0].t_total;
-  int N_state = N_controls_ + 1;
+  int N_controls = total_time / dt_;
+  int N_state = N_controls + 1;
   std::vector<Eigen::Vector3d> pos = sample(traj, total_time, N_state, 0);
   std::vector<Eigen::Vector3d> vel = sample(traj, total_time, N_state, 1);
   std::vector<Eigen::Vector3d> acc = sample(traj, total_time, N_state, 2);
@@ -253,7 +255,7 @@ SplineTrajSampler::sample_and_refine_trajectory(
   std::vector<Eigen::Vector3d> snap = sample(traj, total_time, N_state, 4);
   ROS_INFO_STREAM("[iLQR]: Sampled " << pos.size() << " points"
                                      << "total time = " << total_time);
-  double dt = total_time / N_controls_;
+  double dt = dt_;
   ROS_WARN("[iLQR]: Sample Done");
 
   kr_planning_msgs::TrajectoryDiscretized traj_discretized;
@@ -336,7 +338,7 @@ SplineTrajSampler::sample_and_refine_trajectory(
   // this is input t, has one less element since you need ref everywhere
   // std::vector<double> t = linspace(0.0, total_time, N_controls_ + 1);
   traj_discretized.dt = dt;
-  traj_discretized.N_ctrl = N_controls_;
+  traj_discretized.N_ctrl = N_controls;
   traj_discretized.inital_attitude = ini_q_msg;
   traj_discretized.initial_omega = ini_w_msg;
 
