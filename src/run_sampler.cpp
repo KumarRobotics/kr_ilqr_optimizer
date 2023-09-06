@@ -21,9 +21,9 @@ int main(int argc, char** argv) {
    * The first NodeHandle constructed will fully initialize this node, and the
    * last NodeHandle destructed will close down the node.
    */
-
+  ros::NodeHandle nh;
   // std::shared_ptr<SplineTrajectoryVisual> visual_;
-  SplineTrajSampler sampler(true, true, true, 40);
+  SplineTrajSampler sampler(nh, true, true, true, 40);
   // sampler.mpc_solver->SetUp();
   std::cout << "sampler setup Complete" << std::endl;
   ros::spin();
