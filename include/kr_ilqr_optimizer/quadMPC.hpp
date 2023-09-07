@@ -26,8 +26,24 @@ using Eigen::VectorXi;
 class quadMPC {
  public:
   quadMPC(int N_ctrl, bool use_quaternion) : N_ctrl_(N_ctrl), solver(N_ctrl) {}
-  void SetUp() {
-    model_ptr = std::make_shared<const quadModel>();
+  void SetUp(double mass,
+             double grav_const,
+             Eigen::Matrix3d inertia,
+             double min_thrust,
+             double max_thrust,
+             double kf,
+             double km,
+             double L) {
+    model_ptr = std::make_shared<const quadModel>(
+        mass,
+        grav_const,
+        inertia,
+        min_thrust / 4 / kf,  // converted to w^2
+        max_thrust / 4 / kf,
+        kf,
+        km,
+        L);
+
     // Objective
     std::cout << "Size of Problem N_ctrl = " << N_ctrl_ << std::endl;
   }
@@ -170,8 +186,8 @@ class quadMPC {
     opts.use_quaternion = use_quaternion;
     solver.SetOptions(opts);
     // Constraints
-    const a_float max_thrust = model_ptr->max_thrust_per_prop;
-    const a_float min_thrust = model_ptr->min_thrust_per_prop;
+    const a_float max_thrust = model_ptr->max_w_sq;
+    const a_float min_thrust = model_ptr->min_w_sq;
     auto actuator_con = [max_thrust, min_thrust](
                             a_float* c, const a_float* x, const a_float* u) {
       (void)x;
@@ -294,7 +310,7 @@ class quadMPC {
         idx_end = N_state;
       }
       if (idx_end == index_so_far) {
-        ROS_ERROR("polytope cocntain no points");
+        ROS_ERROR("polytope contains no points");
       } else {
         err = solver.SetConstraint(poly_con,
                                    poly_jac,
@@ -437,7 +453,7 @@ class quadMPC {
       t_now += solver.GetTimeStep(k);
       if (k != N_state - 1) {
         Eigen::VectorXd u(m);
-        solver.GetInput(u.data(), k);
+        solver.GetInput(u.data(), k);  // this is in w_sq now!!! not force
         U_sim.emplace_back(u);
       } else {
         std::cout << "last state = " << x << std::endl;

@@ -37,9 +37,14 @@ class SplineTrajSampler {
   ros::Publisher sampled_traj_pub_;
   ros::Publisher opt_traj_pub_;
   ros::Publisher opt_viz_pub_;
-  // double g_ = 9.81;
-  // double mass_ = mpc_solver->model_ptr->mass_;
-  // Eigen::Matrix3d inertia_ = mpc_solver->model_ptr->moment_of_inertia_;
+
+  double g_;
+  double mass_;
+  Eigen::Matrix3d inertia_;
+  double min_thrust_;  // in Newtons
+  double max_thrust_;  // in Newtons
+
+  ros::NodeHandle nhp_;
 
  public:
   std::unique_ptr<quadMPC> mpc_solver;
@@ -48,7 +53,8 @@ class SplineTrajSampler {
 
   std::vector<Eigen::VectorXd> opt_traj_;  // empty if no solution yet
 
-  SplineTrajSampler(bool subscribe_to_traj_,
+  SplineTrajSampler(ros::NodeHandle& nh,
+                    bool subscribe_to_traj_,
                     bool publish_optimized_traj_,
                     bool publish_viz_,
                     int N_controls_)
@@ -56,25 +62,38 @@ class SplineTrajSampler {
         publish_optimized_traj_(publish_optimized_traj_),
         publish_viz_(publish_viz_),
         N_controls_(N_controls_) {
+    nhp_ = nh;
     bool use_quat = true;
     mpc_solver = std::make_unique<quadMPC>(N_controls_, use_quat);
-    ros::NodeHandle n;
+
+    nhp_.param("VehicleMass", mass_, 0.1);
+    nhp_.param("GravAcc", g_, 9.81);
+    std::vector<double> inertia;
+    nhp_.param("MomentInertia", inertia, std::vector<double>({0.1, 0.1, 0.1}));
+    inertia_ << inertia[0], 0, 0, 0, inertia[1], 0, 0, 0, inertia[2];
+    nhp_.param("MinThrust", min_thrust_, 0.1);
+    nhp_.param("MaxThrust", max_thrust_, 10.0);  // still in force N here
+    double arm_length, kf, km;
+    nhp_.param("arm_length", arm_length, 0.17);
+    nhp_.param("kf", kf, 1.0);
+    nhp_.param("km", km, 0.1);
+
     if (publish_optimized_traj_) {
-      opt_traj_pub_ = n.advertise<kr_planning_msgs::TrajectoryDiscretized>(
+      opt_traj_pub_ = nhp_.advertise<kr_planning_msgs::TrajectoryDiscretized>(
           "optimized_traj_samples", 1);
     }
     if (publish_viz_) {
-      opt_viz_pub_ = n.advertise<visualization_msgs::Marker>(
+      opt_viz_pub_ = nhp_.advertise<visualization_msgs::Marker>(
           "optimized_traj_samples_viz", 1);
     }
     if (subscribe_to_traj_) {
-      sub_ =
-          n.subscribe("/local_plan_server/trajectory_planner/search_trajectory",
-                      1,
-                      &SplineTrajSampler::callbackWrapper,
-                      this);
+      sub_ = nhp_.subscribe(
+          "local_plan_server/trajectory_planner/search_trajectory",
+          1,
+          &SplineTrajSampler::callbackWrapper,
+          this);
     }
-    sampled_traj_pub_ = n.advertise<kr_planning_msgs::TrajectoryDiscretized>(
+    sampled_traj_pub_ = nhp_.advertise<kr_planning_msgs::TrajectoryDiscretized>(
         "spline_traj_samples", 1);
     // opt_traj_pub_ =
     // n.advertise<kr_planning_msgs::TrajectoryDiscretized>("optimized_traj_samples",
@@ -89,7 +108,8 @@ class SplineTrajSampler {
       poly_array_file << "Planning Iteration, Starting x, Jerk Norm Sum, Traj "
                          "Time, Total_Ref_Fdt, Total_Ref_Mdt \n";
     }
-    mpc_solver->SetUp();
+    mpc_solver->SetUp(
+        mass_, g_, inertia_, min_thrust_, max_thrust_, kf, km, arm_length);
   }
   void callbackWrapper(const kr_planning_msgs::SplineTrajectory::ConstPtr& msg);
 

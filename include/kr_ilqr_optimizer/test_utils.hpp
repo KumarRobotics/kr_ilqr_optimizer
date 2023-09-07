@@ -76,8 +76,24 @@ class quadModel {
  public:
   enum class ReferenceFrame { CenterOfGravity, Rear, Front };
 
-  explicit quadModel(ReferenceFrame frame = ReferenceFrame::CenterOfGravity)
-      : reference_frame_(frame) {}
+  explicit quadModel(double mass,
+                     double grav_const,
+                     Eigen::Matrix3d inertia,
+                     double min_w_sq,
+                     double max_w_sq,
+                     double kf,
+                     double km,
+                     double L,
+                     ReferenceFrame frame = ReferenceFrame::CenterOfGravity)
+      : reference_frame_(frame),
+        mass_(mass),
+        grav_(grav_const),
+        moment_of_inertia_(inertia),
+        min_w_sq(min_w_sq),
+        max_w_sq(max_w_sq),
+        kf_(kf),
+        km_(km),
+        motor_dist_(L) {}
 
   void Dynamics(double* x_dot, const double* x, const double* u) const;
   void Jacobian(double* jac, const double* x, const double* u) const;
@@ -96,11 +112,12 @@ class quadModel {
 
   static constexpr int NumStates = 13;
   static constexpr int NumInputs = 4;
-  double get_hover_input() const { return mass_ * 9.81 / 4.0 / kf_; }
-  float max_thrust_per_prop = 8;
-  float min_thrust_per_prop = 0;
-  double kf_ = 1;
-  double mass_ = 1.5;
+  double get_hover_input() const { return mass_ * grav_ / 4.0 / kf_; }
+  float max_w_sq;
+  float min_w_sq;
+  double kf_;
+  double mass_;
+  double grav_;
   Eigen::Matrix3d moment_of_inertia_ = Eigen::Matrix3d::Identity();
   Eigen::Matrix4d forceMatrix_inv() const { return forceMatrix().inverse(); }
   Eigen::Matrix4d forceMatrix() const {

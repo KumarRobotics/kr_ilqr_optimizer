@@ -42,9 +42,9 @@ Eigen::Vector3d SplineTrajSampler::compute_ref_inputs(
     Eigen::Vector3d& omega) {
   // std::cout << "Computing ref inputs" << std::endl;
   // std::cout << mpc_solver->model_ptr->mass_ << std::endl;
-  Eigen::Matrix3d inertia_ = mpc_solver->model_ptr->moment_of_inertia_;
-  double mass_ = mpc_solver->model_ptr->mass_;
-  double g_ = 9.81;  // TODO: Bad place to define this
+  // Eigen::Matrix3d inertia_;
+  // double mass_;
+  // double g_;  // TODO: Bad place to define this
   // Desired force vector.
   Eigen::Vector3d t = acc + Eigen::Vector3d(0, 0, g_);
   Eigen::Vector3d b3 = t.normalized();
