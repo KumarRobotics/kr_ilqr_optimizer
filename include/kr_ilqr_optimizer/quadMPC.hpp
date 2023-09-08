@@ -188,6 +188,7 @@ class quadMPC {
     // Constraints
     const a_float max_thrust = model_ptr->max_w_sq;
     const a_float min_thrust = model_ptr->min_w_sq;
+    std::cout<< "min max propeller limits = " << min_thrust<< "  "<<max_thrust<< std::endl;
     auto actuator_con = [max_thrust, min_thrust](
                             a_float* c, const a_float* x, const a_float* u) {
       (void)x;
@@ -444,6 +445,11 @@ class quadMPC {
     // std::vector<Vector> X_sim;
     // std::vector<Vector> U_sim;
     // std::vector<float> t_sim;
+    if (static_cast<uint>(status) != 0){
+      ROS_ERROR_STREAM("Solve failed with status: " << static_cast<uint>(status));
+      return static_cast<uint>(status);
+    }
+
     float t_now = 0;
     for (int k = 0; k < N_state; k++) {  // should be of size N + 1
       Eigen::VectorXd x(n);
@@ -459,9 +465,6 @@ class quadMPC {
         std::cout << "last state = " << x << std::endl;
       }
     }
-    if (static_cast<uint>(status) != 0)
-      ROS_ERROR_STREAM(
-          "Solve failed with status: " << static_cast<uint>(status));
     // ros::shutdown();
     return static_cast<uint>(status);
   }

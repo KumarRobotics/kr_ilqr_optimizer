@@ -176,47 +176,50 @@ kr_planning_msgs::TrajectoryDiscretized SplineTrajSampler::publish_altro(
       Eigen::Vector3d::Zero();  // TODO:(Yifei) return proper moment
   unpack(moment_t, moment_t_v);
   opt_traj_.clear();
-  // no state here, need to calc from force, stay at 0 for now
-  for (int i = 0; i < N_controls_ + 1; i++) {
-    // deal with last index outside the loop
-    // unpack points . THIS CODE IS SIMILAR TO NEXT SECTION FOR UNPACKING, write
-    // a function!
-    Eigen::Quaterniond q_unpack(
-        X_sim[i][3], X_sim[i][4], X_sim[i][5], X_sim[i][6]);  // not eigen quat
-    Eigen::Vector3d a_body;
-    Eigen::Vector3d v_body;
+  
+  if (solver_status == 0){
+    // no state here, need to calc from force, stay at 0 for now
+    for (int i = 0; i < N_controls_ + 1; i++) {
+      // deal with last index outside the loop
+      // unpack points . THIS CODE IS SIMILAR TO NEXT SECTION FOR UNPACKING, write
+      // a function!
+      Eigen::Quaterniond q_unpack(
+          X_sim[i][3], X_sim[i][4], X_sim[i][5], X_sim[i][6]);  // not eigen quat
+      Eigen::Vector3d a_body;
+      Eigen::Vector3d v_body;
 
-    a_body << 0.0, 0.0,
-        mpc_solver->model_ptr->kf_ * U_sim[i].sum() /
-            mpc_solver->model_ptr->mass_;
+      a_body << 0.0, 0.0,
+          mpc_solver->model_ptr->kf_ * U_sim[i].sum() /
+              mpc_solver->model_ptr->mass_;
 
-    auto a_world = (q_unpack * a_body) - Eigen::Vector3d(0, 0, 9.81);
-    // std::cout << "a_world = " << a_world << std::endl;
-    // std::cout << "a_world = " << a_world << std::endl;
+      auto a_world = (q_unpack * a_body) - Eigen::Vector3d(0, 0, 9.81);
+      // std::cout << "a_world = " << a_world << std::endl;
+      // std::cout << "a_world = " << a_world << std::endl;
 
-    v_body << X_sim[i][7], X_sim[i][8], X_sim[i][9];
-    auto v_world = q_unpack * v_body;
+      v_body << X_sim[i][7], X_sim[i][8], X_sim[i][9];
+      auto v_world = q_unpack * v_body;
 
-    auto RPY = q_unpack.toRotationMatrix().eulerAngles(0, 1, 2);
-    unpack(pos_t, X_sim[i]);  // x y z q1 q2 q3 q4 v1 v2 v3 w1 w2 w3
-    unpack(vel_t, v_world);
-    unpack(acc_t, a_world);
-    Eigen::VectorXd pva_temp(9);
-    pva_temp << X_sim[i].segment<3>(0), v_world, a_world;
-    opt_traj_.push_back(pva_temp);
-    // DEAL WITH VIZ
-    viz_msg.points.push_back(pos_t);
-    // DEAL WITH Actual MSG
-    traj.pos.push_back(pos_t);
-    traj.vel.push_back(vel_t);
-    traj.acc.push_back(acc_t);
-    traj.yaw.push_back(RPY[2]);
-    if (i != N_controls_) {
-      traj.thrust.push_back(U_sim[i].sum());
-      traj.moment.push_back(moment_t);  // 0
+      auto RPY = q_unpack.toRotationMatrix().eulerAngles(0, 1, 2);
+      unpack(pos_t, X_sim[i]);  // x y z q1 q2 q3 q4 v1 v2 v3 w1 w2 w3
+      unpack(vel_t, v_world);
+      unpack(acc_t, a_world);
+      Eigen::VectorXd pva_temp(9);
+      pva_temp << X_sim[i].segment<3>(0), v_world, a_world;
+      opt_traj_.push_back(pva_temp);
+      // DEAL WITH VIZ
+      viz_msg.points.push_back(pos_t);
+      // DEAL WITH Actual MSG
+      traj.pos.push_back(pos_t);
+      traj.vel.push_back(vel_t);
+      traj.acc.push_back(acc_t);
+      traj.yaw.push_back(RPY[2]);
+      if (i != N_controls_) {
+        traj.thrust.push_back(U_sim[i].sum());
+        traj.moment.push_back(moment_t);  // 0
+      }
+      traj.dt = dt;
+      // initial attitude and initial omega not used
     }
-    traj.dt = dt;
-    // initial attitude and initial omega not used
   }
   // DEAL WITH VIZ
   if (publish_viz_) opt_viz_pub_.publish(viz_msg);
@@ -341,9 +344,9 @@ SplineTrajSampler::sample_and_refine_trajectory(
   traj_discretized.initial_omega = ini_w_msg;
 
   ROS_WARN("[iLQR]: Sampling Finished");
-
-  if (compute_altro_)
-    traj_discretized = publish_altro(start_state,
+  
+  if (compute_altro_){
+    kr_planning_msgs::TrajectoryDiscretized refined_traj = publish_altro(start_state,
                                      pos,
                                      vel,
                                      acc,
@@ -358,7 +361,10 @@ SplineTrajSampler::sample_and_refine_trajectory(
                                      traj.header);
 
   ROS_WARN("[iLQR]: Altro Finished");
-  return traj_discretized;
+  return refined_traj;
+  } else{
+    return traj_discretized;
+  }
 }
 
 void SplineTrajSampler::callbackWrapper(
