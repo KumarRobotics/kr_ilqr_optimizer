@@ -10,7 +10,7 @@ import pandas as pd
 pd.set_option('display.max_columns', 50)
 
 
-directory = '/home/yifei/ws/src/kr_autonomous_flight/autonomy_core/map_plan/action_planner/scripts/res'
+directory = '/home/yifei/ws/src/kr_autonomous_flight/kr_ilqr_optimizer/scripts/res'
 #what do we need
 #we have 10 methods and 3 environemnt index
 

@@ -2,7 +2,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
 # Read the CSV file into a DataFrame
-directory = '/home/yifei/ws/src/kr_autonomous_flight/autonomy_core/map_plan/action_planner/scripts/res/ECI_single_line_09-08_14-58-11.csv'
+directory = '/home/yifei/ws/src/kr_autonomous_flight/kr_ilqr_optimizer/scripts_core/map_plan/action_planner/scripts/res/ECI_single_line_09-08_14-58-11.csv'
 
 file_path = directory
 df = pd.read_csv(file_path)
