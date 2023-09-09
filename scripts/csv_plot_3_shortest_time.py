@@ -6,7 +6,7 @@ import numpy as np
 
 
 # Load the entire CSV file into a DataFrame
-directory = '/home/yifei/ws/src/kr_autonomous_flight/kr_ilqr_optimizer/scripts/res/ECI_single_line_09-08_14-58-11_big.csv'
+directory = '/home/yifei/ws/src/kr_autonomous_flight/kr_ilqr_optimizer/scripts/res/ECI_single_line_09-09_02-03-44_big.csv'
 file_path = directory
 df = pd.read_csv(file_path)
 
@@ -37,7 +37,7 @@ for planner, color in color_map.items():
     subset = df_min_time[df_min_time['planner_frontend'] == planner]
     print(subset.count())
     ax.scatter(subset['density_index'], subset['clutter_index'], subset['structure_index'],
-               c=[color]*len(subset), label=planner, s=10, alpha=1)
+               c=[color]*len(subset), label=planner, s=10, alpha=0.6)
 
 # Labels and legend
 ax.set_xlabel('Density Index (Log Scale)')

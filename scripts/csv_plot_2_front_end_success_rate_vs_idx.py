@@ -4,7 +4,7 @@ from mpl_toolkits.mplot3d import Axes3D
 import seaborn as sns
 import pandas as pd
 import numpy as np
-directory = '/home/yifei/ws/src/kr_autonomous_flight/autonomy_core/map_plan/action_planner/scripts/res/ECI_single_line_09-08_14-58-11.csv'
+directory = '/home/yifei/ws/src/kr_autonomous_flight/kr_ilqr_optimizer/scripts/res/ECI_single_line_09-09_02-03-44_big.csv'
 
 file_path = directory
 df = pd.read_csv(file_path)
@@ -22,6 +22,16 @@ filtered_rows2 = df[df['planner_backend'] == 'iLQR(Altro)']
 unique_frontend_planners = filtered_rows['planner_frontend'].unique()
 unique_frontend_planners2 = filtered_rows['planner_frontend'].unique()
 
+grouped_df = df.groupby(['planner_frontend', 'planner_backend'])
+success_rate_list = []
+for (planner_frontend, planner_backend), group in grouped_df:
+    total_count = len(group)
+    success_count = group['success'].sum()
+    collision_count = group['collision_status'].sum()
+    count_minus_one = (group['success_detail'] == -1).sum()
+    
+    success_rate = (success_count / total_count) * 100
+    success_rate_list.append(success_rate)
 # Initialize the plot
 
 # Loop over each unique front-end planner to create a separate subplot
@@ -44,10 +54,10 @@ for i, planner in enumerate(unique_frontend_planners):
     ax.set_ylabel('Clutter Index')
     ax.set_zlabel('Structure Index')
     ax.set_title(f'Planner: GCOPTER + {planner}')
+
+    # add text in red showing the success rate
+    ax.text2D(0.05, 0.95, f"Success Rate: {success_rate_list[i]:.1f}%", transform=ax.transAxes, color='red')
     
-    # Legend
-    legend1 = ax.legend(*scatter.legend_elements(), title="Success")
-    ax.add_artist(legend1)
 
 #do the same for altro
 for i, planner in enumerate(unique_frontend_planners2):
@@ -70,13 +80,11 @@ for i, planner in enumerate(unique_frontend_planners2):
     ax.set_zlabel('Structure Index')
     ax.set_title(f'Planner: iLQR + {planner}')
     
-    # Legend
-    legend1 = ax.legend(*scatter.legend_elements(), title="Success")
-    ax.add_artist(legend1)
+    ax.text2D(0.05, 0.95, f"Success Rate: {success_rate_list[i+5]:.1f}%", transform=ax.transAxes, color='red')
+
 
 plt.tight_layout()
-plt.show()
-
+plt.savefig('fig2.png')
 
 
 
