@@ -22,7 +22,7 @@
 
 class SplineTrajSampler {
  protected:
-  int N_controls_ = 80;
+  const double dt_ = 0.1;
 
   bool compute_altro_ = true;
   bool write_summary_to_file_ = false;
@@ -57,14 +57,14 @@ class SplineTrajSampler {
                     bool subscribe_to_traj_,
                     bool publish_optimized_traj_,
                     bool publish_viz_,
-                    int N_controls_)
+                    double dt)
       : subscribe_to_traj_(subscribe_to_traj_),
         publish_optimized_traj_(publish_optimized_traj_),
         publish_viz_(publish_viz_),
-        N_controls_(N_controls_) {
+        dt_(dt) {
     nhp_ = nh;
     bool use_quat = true;
-    mpc_solver = std::make_unique<quadMPC>(N_controls_, use_quat);
+    mpc_solver = std::make_unique<quadMPC>(dt, use_quat);
 
     nhp_.param("VehicleMass", mass_, 1.5);
     nhp_.param("GravAcc", g_, 9.81);
@@ -74,7 +74,7 @@ class SplineTrajSampler {
     nhp_.param("Ixx", Izz, 1.0);
     inertia_ << Ixx, 0, 0, 0, Iyy, 0, 0, 0, Izz;
     nhp_.param("MinThrust", min_thrust_, 0.0);
-    nhp_.param("MaxThrust", max_thrust_, 8.0*4);  // still in force N here
+    nhp_.param("MaxThrust", max_thrust_, 8.0 * 4);  // still in force N here
     double arm_length, kf, km;
     nhp_.param("arm_length", arm_length, 0.4);
     nhp_.param("kf", kf, 1.0);
@@ -87,8 +87,6 @@ class SplineTrajSampler {
     // inertia_ = Eigen::Matrix3d::Identity();
     // min_thrust_ = 0.0;
     // max_thrust_ = 8.0*4;
-    
-
 
     if (publish_optimized_traj_) {
       opt_traj_pub_ = nhp_.advertise<kr_planning_msgs::TrajectoryDiscretized>(

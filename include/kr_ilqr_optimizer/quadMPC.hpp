@@ -25,7 +25,7 @@ using Eigen::VectorXi;
 
 class quadMPC {
  public:
-  quadMPC(int N_ctrl, bool use_quaternion) : N_ctrl_(N_ctrl), solver(N_ctrl) {}
+  quadMPC(double dt, bool use_quaternion) : dt_(dt), solver(10) {}
   void SetUp(double mass,
              double grav_const,
              Eigen::Matrix3d inertia,
@@ -45,12 +45,12 @@ class quadMPC {
         L);
 
     // Objective
-    std::cout << "Size of Problem N_ctrl = " << N_ctrl_ << std::endl;
+    // std::cout << "Size of Problem N_ctrl = " << N_ctrl_ << std::endl;
   }
   std::shared_ptr<const quadModel> model_ptr;
 
  protected:
-  int N_ctrl_;
+  const double dt_;
 
   const int n = quadModel::NumStates;
   const int m = quadModel::NumInputs;
@@ -90,7 +90,9 @@ class quadMPC {
       std::vector<Vector>& X_sim,
       std::vector<Vector>& U_sim,
       std::vector<double>& t_sim) {
-    solver = ALTROSolver(N_ctrl_);
+    // calculate N_ctrl
+    int N_ctrl = pos.size() - 1;
+    solver = ALTROSolver(N_ctrl);
     Qd = Vector::Constant(n, 0);
     Rd = Vector::Constant(m, 0.1);
     Qdf = Vector::Constant(n, 0);
@@ -127,7 +129,7 @@ class quadMPC {
     err = solver.SetExplicitDynamics(dyn, jac);
 
     // Read Reference Trajectory
-    int N_state = N_ctrl_ + 1;
+    int N_state = N_ctrl + 1;
     // float t_total = t_total_;
 
     u_ref_single = Vector::Constant(m, model_ptr->get_hover_input());
@@ -140,7 +142,7 @@ class quadMPC {
     Eigen::Matrix<double, 13, 1> xf;
     xf << pos.back(), 1.0, 0.0, 0.0, 0.0, 0, 0, 0, 0, 0, 0;
     // Suprise ! Specifying COST FUNCTION TWICE is useful!!
-    for (int k = 0; k < N_ctrl_; ++k) {
+    for (int k = 0; k < N_ctrl; ++k) {
       if (use_quaternion) {
         err = solver.SetQuaternionCost(
             n, m, Qd.data(), Rd.data(), 1.0, xf.data(), u_ref_single.data(), k);
@@ -188,7 +190,8 @@ class quadMPC {
     // Constraints
     const a_float max_thrust = model_ptr->max_w_sq;
     const a_float min_thrust = model_ptr->min_w_sq;
-    std::cout<< "min max propeller limits = " << min_thrust<< "  "<<max_thrust<< std::endl;
+    std::cout << "min max propeller limits = " << min_thrust << "  "
+              << max_thrust << std::endl;
     auto actuator_con = [max_thrust, min_thrust](
                             a_float* c, const a_float* x, const a_float* u) {
       (void)x;
@@ -307,7 +310,11 @@ class quadMPC {
       double time_end = time_so_far + allo_ts[k];
       uint idx_end = int(time_end / dt);
       if (idx_end > N_state) {
-        ROS_ERROR_STREAM("idx_end = " << idx_end << " > N_state");
+        // allo_ts timing and traj_timing are different, so this is possible
+        ROS_WARN_STREAM("idx_end = " << idx_end << " > N_state");
+        idx_end = N_state;
+      }
+      if (k == h_polys.size() - 1) {
         idx_end = N_state;
       }
       if (idx_end == index_so_far) {
@@ -360,7 +367,7 @@ class quadMPC {
     // std::cout << "x0 = " << x0 << std::endl;
     // std::cout << "xf = " << xf << std::endl;
     // Set Tracking Cost Function
-    for (int k = 0; k < N_ctrl_; ++k) {
+    for (int k = 0; k < N_ctrl; ++k) {
       Eigen::Matrix<double, 13, 1> x_ref_k;
       // std::cout<< "ref k = " << k << std::endl;
       // std::cout<< "pos[k] = " << pos[k] << std::endl;
@@ -445,8 +452,9 @@ class quadMPC {
     // std::vector<Vector> X_sim;
     // std::vector<Vector> U_sim;
     // std::vector<float> t_sim;
-    if (static_cast<uint>(status) != 0){
-      ROS_ERROR_STREAM("Solve failed with status: " << static_cast<uint>(status));
+    if (static_cast<uint>(status) != 0) {
+      ROS_ERROR_STREAM(
+          "Solve failed with status: " << static_cast<uint>(status));
       return static_cast<uint>(status);
     }
 
