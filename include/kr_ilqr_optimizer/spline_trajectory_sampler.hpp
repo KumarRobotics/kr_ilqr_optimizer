@@ -63,7 +63,7 @@ class SplineTrajSampler {
         publish_viz_(publish_viz_),
         dt_(dt) {
     nhp_ = nh;
-    bool use_quat = true;
+    bool use_quat = false;
     mpc_solver = std::make_unique<quadMPC>(dt, use_quat);
 
     nhp_.param("VehicleMass", mass_, 1.5);

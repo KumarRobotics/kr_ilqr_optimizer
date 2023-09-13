@@ -25,7 +25,8 @@ using Eigen::VectorXi;
 
 class quadMPC {
  public:
-  quadMPC(double dt, bool use_quaternion) : dt_(dt), solver(10) {}
+  quadMPC(double dt, bool use_quaternion)
+      : dt_(dt), solver(10), use_quaternion(use_quaternion) {}
   void SetUp(double mass,
              double grav_const,
              Eigen::Matrix3d inertia,
@@ -457,14 +458,14 @@ class quadMPC {
           "Solve failed with status: " << static_cast<uint>(status));
       return static_cast<uint>(status);
     }
-
+    float dt_solver = solver.GetTimeStep(0);
     float t_now = 0;
     for (int k = 0; k < N_state; k++) {  // should be of size N + 1
       Eigen::VectorXd x(n);
       solver.GetState(x.data(), k);
       X_sim.emplace_back(x);
       t_sim.emplace_back(t_now);
-      t_now += solver.GetTimeStep(k);
+      t_now += dt_solver;
       if (k != N_state - 1) {
         Eigen::VectorXd u(m);
         solver.GetInput(u.data(), k);  // this is in w_sq now!!! not force

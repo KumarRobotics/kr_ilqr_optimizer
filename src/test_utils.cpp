@@ -375,7 +375,7 @@ void quadModel::Dynamics(double* x_dot,
 
   // state: pos(world) quat(world->body) vel(body) omega(body)
   //        0 1 2      3  4  5  6        7 8 9     10 11 12
-  Eigen::Vector4d q = x_vec.segment<4>(3);
+  Eigen::Vector4d q = x_vec.segment<4>(3).normalized();
   Eigen::Vector3d vb = x_vec.segment<3>(7);
   Eigen::Vector3d w = x_vec.segment<3>(10);
   // std::cout << "section 3 success "  << std::endl;
