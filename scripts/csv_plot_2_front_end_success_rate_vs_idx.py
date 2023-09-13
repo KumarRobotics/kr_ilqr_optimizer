@@ -5,10 +5,14 @@ from mpl_toolkits.mplot3d import Axes3D
 import numpy as np
 
 # Load the CSV file into a DataFrame
-directory = '/home/yifei/ws/src/kr_autonomous_flight/kr_ilqr_optimizer/scripts/res/ECI_Structure_single_line_09-09_02-03-44.csv'
-
+# /home/yifei/ws/src/kr_autonomous_flight/kr_ilqr_optimizer/scripts/res/9.11.23/ECI_single_line_09-11_15-35-58.csv'
+# directory = '/home/yifei/ws/src/kr_autonomous_flight/kr_ilqr_optimizer/scripts/res/ECI_Maze_single_line_09-09_14-50-20.csv'
+directory = '/home/yifei/ws/src/kr_autonomous_flight/kr_ilqr_optimizer/scripts/res/ECI_Real_single_line_09-09_18-14-35.csv'
 file_path = directory
 df = pd.read_csv(file_path)
+df['success'] = df['success'].astype(bool)
+df['collision_status'] = df['collision_status'].astype(bool)
+df['success'] = df['success'] & ~df['collision_status']
 
 # Group the data by 'planner_frontend' and 'planner_backend'
 grouped_data = df.groupby(['planner_frontend', 'planner_backend'])

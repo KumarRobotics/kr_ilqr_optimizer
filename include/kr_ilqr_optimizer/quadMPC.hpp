@@ -25,7 +25,8 @@ using Eigen::VectorXi;
 
 class quadMPC {
  public:
-  quadMPC(double dt, bool use_quaternion) : dt_(dt), solver(10) {}
+  quadMPC(double dt, bool use_quaternion)
+      : dt_(dt), solver(10), use_quaternion_(use_quaternion) {}
   void SetUp(double mass,
              double grav_const,
              Eigen::Matrix3d inertia,
@@ -59,7 +60,7 @@ class quadMPC {
   Vector Qd;
   Vector Rd;
   Vector Qdf;
-  bool use_quaternion;
+  bool use_quaternion_;
 
   ExplicitDynamicsFunction dyn;
   ExplicitDynamicsJacobian jac;
@@ -143,7 +144,7 @@ class quadMPC {
     xf << pos.back(), 1.0, 0.0, 0.0, 0.0, 0, 0, 0, 0, 0, 0;
     // Suprise ! Specifying COST FUNCTION TWICE is useful!!
     for (int k = 0; k < N_ctrl; ++k) {
-      if (use_quaternion) {
+      if (use_quaternion_) {
         err = solver.SetQuaternionCost(
             n, m, Qd.data(), Rd.data(), 1.0, xf.data(), u_ref_single.data(), k);
       } else {
@@ -152,7 +153,7 @@ class quadMPC {
       }
     }
     // Set FINAL Cost
-    if (use_quaternion) {
+    if (use_quaternion_) {
       err = solver.SetQuaternionCost(
           n,
           m,
@@ -185,7 +186,7 @@ class quadMPC {
     opts.iterations_max = 40;
     opts.use_backtracking_linesearch = true;
     opts.quat_start_index = 3;  // THIS IS VERY IMPORTANT!
-    opts.use_quaternion = use_quaternion;
+    opts.use_quaternion = use_quaternion_;
     solver.SetOptions(opts);
     // Constraints
     const a_float max_thrust = model_ptr->max_w_sq;
@@ -208,16 +209,16 @@ class quadMPC {
     auto actuator_jac = [](a_float* jac, const a_float* x, const a_float* u) {
       (void)x;
       (void)u;
-      Eigen::Map<Eigen::Matrix<a_float, 8, 17>> J(jac);
+      Eigen::Map<Eigen::Matrix<a_float, 8, 17 - 1>> J(jac);
       J.setZero();
-      J(0, 13) = 1.0;
-      J(1, 14) = 1.0;
-      J(2, 15) = 1.0;
-      J(3, 16) = 1.0;
-      J(4, 13) = -1.0;
-      J(5, 14) = -1.0;
-      J(6, 15) = -1.0;
-      J(7, 16) = -1.0;
+      J(0, 12) = 1.0;
+      J(1, 13) = 1.0;
+      J(2, 14) = 1.0;
+      J(3, 15) = 1.0;
+      J(4, 12) = -1.0;
+      J(5, 13) = -1.0;
+      J(6, 14) = -1.0;
+      J(7, 15) = -1.0;
     };
     auto state_con = [xf](a_float* c, const a_float* x, const a_float* u) {
       (void)u;
@@ -238,14 +239,16 @@ class quadMPC {
     };
     auto state_jac = [](a_float* jac, const a_float* x, const a_float* u) {
       (void)u;
-      Eigen::Map<Eigen::Matrix<a_float, 6, 17>> J(jac);
+      Eigen::Map<Eigen::Matrix<a_float, 6, 17 - 1>> J(jac);
       J.setZero();
-      J(0, 7) = 1.0;
-      J(1, 8) = 1.0;
-      J(2, 9) = 1.0;
-      J(3, 10) = 1.0;
-      J(4, 11) = 1.0;
-      J(5, 12) = 1.0;
+      // 012 345 678 91011
+      // drive velcoity to 0
+      J(0, 6) = 1.0;
+      J(1, 7) = 1.0;
+      J(2, 8) = 1.0;
+      J(3, 9) = 1.0;
+      J(4, 10) = 1.0;
+      J(5, 11) = 1.0;
       // J(6, 0) = 1.0;  // to get to goal properly
       // J(7, 1) = 1.0;
       // J(8, 2) = 1.0;
@@ -266,7 +269,7 @@ class quadMPC {
     };
     auto state_jac_z = [](a_float* jac, const a_float* x, const a_float* u) {
       (void)u;
-      Eigen::Map<Eigen::Matrix<a_float, 1, 17>> J(jac);
+      Eigen::Map<Eigen::Matrix<a_float, 1, 17 - 1>> J(jac);
       J.setZero();
       J(0, 2) = -1.0;
     };
@@ -303,7 +306,7 @@ class quadMPC {
                           a_float* jac, const a_float* x, const a_float* u) {
         (void)u;
         const int n_con = h_poly.second.rows();
-        Eigen::Map<Eigen::MatrixXd> J(jac, n_con, 17);
+        Eigen::Map<Eigen::MatrixXd> J(jac, n_con, 17 - 1);
         J.setZero();
         J.block(0, 0, n_con, 3) = h_poly.first;
       };
@@ -377,7 +380,7 @@ class quadMPC {
       // std::cout << k << std::endl;
       //
 
-      if (use_quaternion) {
+      if (use_quaternion_) {
         err = solver.SetQuaternionCost(n,
                                        m,
                                        Qd.data(),
@@ -408,7 +411,7 @@ class quadMPC {
       err = solver.SetInput(u_ref_single.data(), m, k);
     }
     // Set Final COST!!
-    if (use_quaternion) {
+    if (use_quaternion_) {
       err = solver.SetQuaternionCost(n,
                                      m,
                                      Qdf.data(),
@@ -459,12 +462,13 @@ class quadMPC {
     }
 
     float t_now = 0;
+    float dt_solver = solver.GetTimeStep(0);
     for (int k = 0; k < N_state; k++) {  // should be of size N + 1
       Eigen::VectorXd x(n);
       solver.GetState(x.data(), k);
       X_sim.emplace_back(x);
       t_sim.emplace_back(t_now);
-      t_now += solver.GetTimeStep(k);
+      t_now += dt_solver;
       if (k != N_state - 1) {
         Eigen::VectorXd u(m);
         solver.GetInput(u.data(), k);  // this is in w_sq now!!! not force

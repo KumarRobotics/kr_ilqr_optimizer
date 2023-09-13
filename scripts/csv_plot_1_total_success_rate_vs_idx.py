@@ -4,10 +4,15 @@ import matplotlib
 import numpy as np
 matplotlib.rcParams['lines.linewidth'] = 4
 # Read the CSV file into a DataFrame
-directory = '/home/yifei/ws/src/kr_autonomous_flight/kr_ilqr_optimizer/scripts/res/ECI_Structure_single_line_09-09_02-03-44.csv'
+directory = '/home/yifei/ws/src/kr_autonomous_flight/kr_ilqr_optimizer/scripts/res/9.11.23/ECI_single_line_09-11_15-35-58.csv'
 
 file_path = directory
 df = pd.read_csv(file_path)
+
+#change success column to success and no-collision
+df['success'] = df['success'].astype(bool)
+df['collision_status'] = df['collision_status'].astype(bool)
+df['success'] = df['success'] & ~df['collision_status']
 
 # Group by 'map_seed' and calculate the mean of the 'success' column
 grouped_df = df.groupby(['map_seed', 'density_index', 'clutter_index', 'structure_index'])['success'].mean().reset_index()
@@ -48,5 +53,6 @@ ax.set_ylabel('Clutter Index (Log Scale)')
 ax.set_zlabel('Structure Index (Log Scale)')
 ax.set_title('3D Scatter Plot of Success Rate vs Log-transformed Density, Clutter, and Structure Indices')
 ax.set_xlim([-6, 0])
-plt.show()
-# plt.savefig('fig1.png')
+# plt.show()
+fig.tight_layout()
+plt.savefig('fig1.png')

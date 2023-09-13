@@ -6,7 +6,7 @@ import numpy as np
 
 
 # Load the entire CSV file into a DataFrame
-directory = '/home/yifei/ws/src/kr_autonomous_flight/kr_ilqr_optimizer/scripts/res/ECI_single_line_09-09_02-03-44_big.csv'
+directory = '/home/yifei/ws/src/kr_autonomous_flight/kr_ilqr_optimizer/scripts/res/9.11.23/ECI_single_line_09-11_15-35-58.csv'
 file_path = directory
 df = pd.read_csv(file_path)
 
